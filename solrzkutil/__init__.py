@@ -23,13 +23,6 @@ from colorama import Fore, Back, Style
 
 __application__ = 'solr-zkutil'
 
-ZK_ENVIRONMENTS = {
-    'ZK_PROD'  : 'prod.gigprod.dhiaws.com:2181',
-    'ZK_PILOT' : 'pilot.gigdev.dhiaws.com:2181',
-    'ZK_QA'    : 'qa.gigdev.dhiaws.com:2181',
-    'ZK_DEV'   : 'dev.gigdev.dhiaws.com:2181'
-}
-
 COMMANDS = {
     # key: cli-value
     # do not change the keys, but you may freely change the values of the tuple, to modify
@@ -333,6 +326,7 @@ def watch(zookeepers, node):
     if children:
         @zk.ChildrenWatch(node)
         def watch_children(children):
+            print('')
             print(style_text("Watch Event: ", TITLE_STYLE))
             for ch in children:
                 print(style_text(ch, INFO_STYLE, lpad=2))
@@ -341,6 +335,7 @@ def watch(zookeepers, node):
     # otherwise watch the node itself.
         @zk.DataWatch(node)
         def watch_data(data, stat, event):
+            print('')
             print(style_text("Watch Event: (%s)" % stat.version, TITLE_STYLE))
             print(style_multiline(data, INFO_STYLE, lpad=2))
             print('')
