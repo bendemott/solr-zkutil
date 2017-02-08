@@ -15,57 +15,59 @@ The program is designed to work with Windows or Linux hosts, and is easy to inst
 Features
 --------
 
-| **Supports environment aliases for ZooKeeper Connections**
-| 
+Supports environment aliases for ZooKeeper Connections
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
 |environmentconf|
-|
-| **Add your ZooKeeper connection string to the program and an environment alias**
+
+Add your ZooKeeper connection string to the program and an environment alias
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ::
 
     solr-zkutil config --add 'DEV=zk01.host.com:2181,zk02.host.com:2181,zk03.host.com:2181'
     
-| **Or replace the configuration entirely using valid json**
+| `Or replace the configuration entirely using valid json`
+
 ::
     
     solr-zkutil config --configuration '{\"DEV\":\"zk01.dev.host.com:2181,zk02.dev.host.com:2181,zk03.dev.host.com:2181\", \"QA\": \"zk01.qa.host.com:2181,zk02.qa.host.com:2181,zk03.qa.host.com:2181\"}'
 
-| 
+
 |environmentadd|
 
-**Query ZooKeeper for Solr Hosts, and Open the administration web-interface automatically**
-|
+Query ZooKeeper for Solr Hosts, and Open the administration web-interface automatically
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 | ``solr-zkutil live-nodes --env DEV --browser``
-|
+
 | `or`
-|
+
 | ``solr-zkutil live-nodes -z zk01.dev.host.com:2181 --browser``
-|
+
 |livenodes|
-|
-| **Watch any ZooKeeper file/node for changes, during deployments, etc**
-|
+
+Watch any ZooKeeper file/node for changes, during deployments, etc
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 | ``solr-zkutil watch /live_nodes --env DEV``
-|
+
 | `or`
-|
+
 | ``solr-zkutil watch /clusterstate.json --env PROD`` 
-|
+
 |watchnode|
-|
-| **Issue Administrative Commands Easily**
-|
+
+Issue Administrative Commands Easily
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 | ``solr-zkutil admin RUOK --env DEV``
-| 
+
 |admincmd|
-|
+
 | ``solr-zkutil ls /live_nodes -z zk01.dev.host.com:2181,zk02.dev.host.com:2181,zk03.dev.host.com:2181``
-|
+
 | `or.. note that ls can also be used to view the contents of node`
-|
+
 | ``solr-zkutil ls /clusterstate.json --env PROD --all-hosts``
-|
-| **View the contents/children of a node across all ensemble (cluster) members quickly**
-| 
+
+View the contents/children of a node across all ensemble (cluster) members quickly
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 |lsnodesall|
 
 
@@ -73,19 +75,22 @@ Installation
 ------------
 
 Windows
-```````
+^^^^^^^
 On windows install ``Python 2.7``, and ensure Python 2.7 ``exe`` and ``Scripts`` paths are configured 
 to be on your Windows Path environment, and the program should be accessible through ``PowerShell``
 or ``cmd.exe``
 
+`Note: I will try to add a bundled exe installer soon for Windows`
+
 **Python Include Paths**
+
 - ``C:\Python27``
 - ``C:\Python27\Scripts``
 
 Once you have this configured you should be able to also execute ``pip`` without specify it's path.
 
 Install Manually
-````````````````
+^^^^^^^^^^^^^^^^
 Simply download, clone the repository, open a console and execute:
 ``python setup.py install`` 
 
@@ -94,25 +99,37 @@ On windows if you have not configured your Python environment you can install wi
     C:\Python27\python.exe setup.py install
 
 Install from pip/github
-```````````````````````
+^^^^^^^^^^^^^^^^^^^^^^^
 ::
 
     pip install git+https://github.com/bendemott/solr-zkutil.git
 
 Installing from PyPi
-````````````````````
+^^^^^^^^^^^^^^^^^^^^
 ::
 
     pip install solr-zkutil
 
 Program Commands
 ----------------
-Once installed the program is executable using the command ``solr-zkutil``, for help with the command
-type ``solr-zkutil --help``
+Once installed the program is executable using the command::
 
-If you are having trouble configuring paths the program can also be ran using ``python -m zksolrutil``
-or ``C:\Python27\python.exe -m zksolrutil`` in `Windows`
+    solr-zkutil
 
+For help with the command type::
+
+    solr-zkutil --help
+
+If you are having trouble configuring paths the program can also be ran using:: 
+
+    python -m zksolrutil
+
+or for `Windows`:: 
+
+    C:\Python27\python.exe -m zksolrutil 
+
+Usage
+^^^^^
 ::
 
     usage: solr-zkutil [-h]
