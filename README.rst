@@ -15,25 +15,30 @@ The program is designed to work with Windows or Linux hosts, and is easy to inst
 Features
 --------
 
-Host/Environment Configurations
-````````````````````````````````
-**Supports environment aliases for ZooKeeper Connections**
+| **Supports environment aliases for ZooKeeper Connections**
+| 
 |environmentconf|
 
-**Add your ZooKeeper connection string to the program and an environment alias**
+| **Add your ZooKeeper connection string to the program and an environment alias**
+| 
 |environmentadd|
 
 **Query ZooKeeper for Solr Hosts, and Open the administration web-interface automatically**
+| 
 |livenodes|
 
-**Watch any ZooKeeper file/node for changes, during deployments, etc**
+| **Watch any ZooKeeper file/node for changes, during deployments, etc**
+| 
 |watchnode|
 
-**Issue Administrative Commands Easily**
+| **Issue Administrative Commands Easily**
+| 
 |admincmd|
 
-**View the contents/children of a node across all ensemble (cluster) members quickly**
+| **View the contents/children of a node across all ensemble (cluster) members quickly**
+| 
 |lsnodesall|
+
 
 Installation
 ------------
