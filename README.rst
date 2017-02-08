@@ -66,11 +66,15 @@ On windows if you have not configured your Python environment you can install wi
 
 Install from pip/github
 ```````````````````````
-``pip install git+https://github.com/bendemott/solr-zkutil.git``
+::
+
+    pip install git+https://github.com/bendemott/solr-zkutil.git
 
 Installing from PyPi
 ````````````````````
-``pip install solr-zkutil``
+::
+
+    pip install solr-zkutil
 
 Program Commands
 ----------------
