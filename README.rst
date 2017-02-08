@@ -18,23 +18,52 @@ Features
 | **Supports environment aliases for ZooKeeper Connections**
 | 
 |environmentconf|
-
+|
 | **Add your ZooKeeper connection string to the program and an environment alias**
+::
+
+    solr-zkutil config --add 'DEV=zk01.host.com:2181,zk02.host.com:2181,zk03.host.com:2181'
+    
+| **Or replace the configuration entirely using valid json**
+::
+    
+    solr-zkutil config --configuration '{\"DEV\":\"zk01.dev.host.com:2181,zk02.dev.host.com:2181,zk03.dev.host.com:2181\", \"QA\": \"zk01.qa.host.com:2181,zk02.qa.host.com:2181,zk03.qa.host.com:2181\"}'
+
 | 
 |environmentadd|
 
 **Query ZooKeeper for Solr Hosts, and Open the administration web-interface automatically**
-| 
+|
+| ``solr-zkutil live-nodes --env DEV --browser``
+|
+| `or`
+|
+| ``solr-zkutil live-nodes -z zk01.dev.host.com:2181 --browser``
+|
 |livenodes|
-
+|
 | **Watch any ZooKeeper file/node for changes, during deployments, etc**
-| 
+|
+| ``solr-zkutil watch /live_nodes --env DEV``
+|
+| `or`
+|
+| ``solr-zkutil watch /clusterstate.json --env PROD`` 
+|
 |watchnode|
-
+|
 | **Issue Administrative Commands Easily**
+|
+| ``solr-zkutil admin RUOK --env DEV``
 | 
 |admincmd|
-
+|
+| ``solr-zkutil ls /live_nodes -z zk01.dev.host.com:2181,zk02.dev.host.com:2181,zk03.dev.host.com:2181``
+|
+| `or.. note that ls can also be used to view the contents of node`
+|
+| ``solr-zkutil ls /clusterstate.json --env PROD --all-hosts``
+|
 | **View the contents/children of a node across all ensemble (cluster) members quickly**
 | 
 |lsnodesall|

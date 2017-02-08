@@ -52,5 +52,6 @@ setup(
         'colorama',        # Console colors
         'kazoo',           # ZooKeeper api
     ],
+    keywords = ['solr', 'zookeeper', 'cli'], # arbitrary keywords
     scripts=SCRIPTS
 )
