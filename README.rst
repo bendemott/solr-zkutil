@@ -122,11 +122,11 @@ For help with the command type::
 
 If you are having trouble configuring paths the program can also be ran using:: 
 
-    python -m zksolrutil
+    python -m solrzkutil
 
 or for `Windows`:: 
 
-    C:\Python27\python.exe -m zksolrutil 
+    C:\Python27\python.exe -m solrzkutil 
 
 Usage
 ^^^^^
