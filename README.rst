@@ -87,7 +87,7 @@ or ``cmd.exe``
 - ``C:\Python27``
 - ``C:\Python27\Scripts``
 
-Once you have this configured you should be able to also execute ``pip`` without specify it's path.
+Once you have this configured you should be able to also execute ``pip`` without specifying it's path.
 
 Install Manually
 ^^^^^^^^^^^^^^^^
