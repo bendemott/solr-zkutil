@@ -32,15 +32,10 @@ if sys.version_info < REQUIRED_PYTHON_VERSION:
         '%s requires Python %s or greater' % (__application__, REQUIRED_PYTHON_VERSION.join('.'))
     )
     
-if os.name == 'nt':
-    SCRIPTS = ['./bin/solr-zkutil.bat', './bin/solr-zkutil.py']
-else:
-    SCRIPTS = ['./bin/solr-zkutil']
-
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.82',
+    version='0.86',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),
@@ -52,6 +47,7 @@ setup(
         'colorama',        # Console colors
         'kazoo',           # ZooKeeper api
     ],
+    package_data={'solrzkutil': ['bin/solr-zkutil.bat']},
     keywords = ['solr', 'zookeeper', 'cli'], # arbitrary keywords
-    scripts=SCRIPTS
+    scripts=['bin/solr-zkutil.bat', 'bin/solr-zkutil.py', 'bin/solr-zkutil']
 )

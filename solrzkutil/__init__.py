@@ -79,7 +79,8 @@ def config_path():
     else:
         conf = os.path.expanduser("~/.%s/environments.json" % CONFIG_DIRNAME)
     return conf
-
+    
+    
 def config():
     conf = config_path()
 
@@ -100,12 +101,9 @@ def config():
     return json.loads(open(conf, mode='r').read().strip())
 
 
-
-
-
-
-
-def style_header( text, width = 0):
+def style_header(text, width = 0):
+    if not text:
+        return ''
     width = max(len(text) + HEADER_JUST * 2, width)
     pad = ' ' * width
     output = '\n%s%s\n%s\n%s%s\n' % (HEADER_STYLE, pad, text.center(width), pad, Style.RESET_ALL)
@@ -113,6 +111,9 @@ def style_header( text, width = 0):
 
 
 def style_text(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, char=' ', restore=''):
+    if not text:
+        return ''
+        
     style = ''.join(styles)
     text = text.ljust(ljust, char)
     text = text.rjust(rjust, char)
@@ -120,7 +121,10 @@ def style_text(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, cha
     text = char*(lpad+pad) + text + char*(rpad+pad)
     return style + text + Style.RESET_ALL + restore
 
+
 def style_multiline(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, char=' '):
+    if not text:
+        return ''
     lines = text.split('\n')
     style = ''.join(styles)
     fmt_text = ''
@@ -128,7 +132,6 @@ def style_multiline(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0
         text = style_text(text, styles, ljust, rjust, cen, lpad, rpad, pad, char)
         fmt_text += text + '\n'
     return fmt_text
-
 
 
 def update_config(configuration=None, add=None):
@@ -166,6 +169,7 @@ def update_config(configuration=None, add=None):
 
     open(conf, mode='w').write(new_config)
     print(style_text('  ...Saved', INPUT_STYLE, pad=2))
+
 
 def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
     """
@@ -571,7 +575,7 @@ def main(argv=None):
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
     if cmd == COMMANDS['solr'][0]:
         hosts = show_node(zookeepers=args['zookeepers'], node=ZK_LIVE_NODES, all_hosts=args['all_hosts'])
-        if args.get('browser'):
+        if args.get('browser') and hosts:
             solr_admin = choice(hosts).replace('_solr', '/solr')
             # C:\Users\Scott\AppData\Local\Google\Chrome\Application\chrome.exe
             # webbrowser._tryorder
