@@ -50,32 +50,102 @@ DIFF_STYLE = Fore.MAGENTA + Style.BRIGHT
 
 ZK_LIVE_NODES = '/live_nodes'
 ZK_CLUSTERSTATE = '/clusterstate.json'
-ZK_ADMIN_CMDS = '''
-conf
-cons
-crst
-dump
-envi
-ruok
-srst
-srvr
-stat
-wchs
-wchc
-dirs
-wchp
-mntr
-isro
-gtmk
-stmk
-'''.strip().split('\n')
+
+ZK_ADMIN_CMDS = {
+    'conf': {
+        'help': 'Print details about serving configuration.',
+        'example': '',
+        'version': '3.3.0',
+    },
+    'cons': {
+        'help': ('List full connection/session details for all clients connected to this server. '
+            'Includes information on numbers of packets received/sent, session id, operation '
+            'latencies, last operation performed, etc...'),
+        'example': '',
+        'version': '3.3.0',
+    },
+    'crst':{
+        'help': 'Reset connection/session statistics for all connections.',
+        'example': '',
+        'version': '3.3.0',
+    },
+    'dump':{
+        'help': 'Lists the outstanding sessions and ephemeral nodes. This only works on the leader.',
+        'example': '',
+        'version': '',
+    },
+    'envi':{
+        'help': 'Print details about serving environment',
+        'example': '',
+        'version': '',
+    },
+    'ruok':{
+        'help': 'Tests if server is running in a non-error state. The server will respond with imok if it is running. Otherwise it will not respond at all.',
+        'example': '',
+        'version': '',
+    },
+    'srst':{
+        'help': 'Reset server statistics.',
+        'example': '',
+        'version': '',
+    },
+    'srvr':{
+        'help': 'Lists full details for the server.',
+        'example': '',
+        'version': '3.3.0',
+    },
+    'stat':{
+        'help': 'Lists brief details for the server and connected clients.',
+        'example': '',
+        'version': '',
+    },
+    'wchs':{
+        'help': 'Lists brief information on watches for the server.',
+        'example': '',
+        'version': '3.3.0',
+    },
+    'wchc':{
+        'help': 'Lists detailed information on watches for the server, by session. (may be expensive)',
+        'example': '',
+        'version': '3.3.0',
+    },
+    'dirs':{
+        'help': 'Shows the total size of snapshot and log files in bytes',
+        'example': '',
+        'version': '3.5.1',
+    },
+    'wchp':{
+        'help': 'Lists detailed information on watches for the server, by path. This outputs a list of paths (znodes) with associated sessions.',
+        'example': '',
+        'version': '3.3.0',
+    },
+    'mntr': {
+        'help': 'Outputs a list of variables that could be used for monitoring the health of the cluster.',
+        'example': '3.4.0'
+    },
+    'isro':{
+        'help': 'Tests if server is running in read-only mode. The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.',
+        'example': '',
+        'version': '3.4.0',
+    },
+    'gtmk':{
+        'help': 'Gets the current trace mask as a 64-bit signed long value in decimal format. See stmk for an explanation of the possible values.',
+        'example': '',
+        'version': '',
+    },
+    'stmk':{
+        'help': 'Sets the current trace mask. The trace mask is 64 bits, where each bit enables or disables a specific category of trace logging on the server.',
+        'example': '',
+        'version': '',
+    },
+}
 
 NEW_TAB = 2
 
 def config_path():
     conf = None
-    if os.name == 'win32':
-        conf = os.path.expandvars("%appdata%/.%s/environments.json" % CONFIG_DIRNAME)
+    if os.name == 'nt':
+        conf = os.path.expandvars("%%appdata%%/.%s/environments.json" % CONFIG_DIRNAME)
     else:
         conf = os.path.expanduser("~/.%s/environments.json" % CONFIG_DIRNAME)
     return conf
@@ -126,7 +196,6 @@ def style_multiline(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0
     if not text:
         return ''
     lines = text.split('\n')
-    style = ''.join(styles)
     fmt_text = ''
     for text in lines:
         text = style_text(text, styles, ljust, rjust, cen, lpad, rpad, pad, char)
@@ -329,31 +398,43 @@ def watch(zookeepers, node):
 
     # the first event will always be triggered immediately to show the existing state of the node
     # instead of saying 'watch event' tell the user we are just displaying initial state.
-    child_watch_str = 'Child Nodes:'
-    data_watch_str = 'Content: (%s)' 
+    
+    watch_counter = 0
     
     # If there are children, watch them.
     if children or node.endswith('/'):
         @zk.ChildrenWatch(node)
         def watch_children(children):
-            global child_watch_str
+            watch_counter += 1
+            
+            if watch_counter <= 1:
+                child_watch_str = 'Child Nodes:'
+            else:
+                child_watch_str = 'Node Watch Event: '
+            
             children.sort()
             print('')
             print(style_text(child_watch_str, TITLE_STYLE))
             for ch in children:
                 print(style_text(ch, INFO_STYLE, lpad=2))
             print('')
-            child_watch_str = 'Node Watch Event: '
+
     else:
     # otherwise watch the node itself.
         @zk.DataWatch(node)
         def watch_data(data, stat, event):
-            global data_watch_str
+            watch_counter += 1
+            
+            if watch_counter <= 1:
+                data_watch_str = 'Content: (%s)' 
+            else:
+                data_watch_str = 'Data Watch Event: (v%s)'
+                
             print('')
             print(style_text(data_watch_str % stat.version, TITLE_STYLE))
             print(style_multiline(data, INFO_STYLE, lpad=2))
             print('')
-            data_watch_str = 'Data Watch Event: (v%s)'
+
 
 
     CHAR_WIDTH = 60
@@ -424,7 +505,7 @@ def cli():
             if len(hostport) == 1:
                 raise argparse.ArgumentTypeError("Port is required for: %s... default: 2181" % zk)
             else:
-                host, port = hostport
+                _, port = hostport
                 if not port.isdigit():
                     raise argparse.ArgumentTypeError("Port must be numeric for: %s" % zk)
 
@@ -485,15 +566,6 @@ def cli():
         }
     }
 
-    node_argument = {
-        'args': ['-n', '--node'],
-        'kwargs': {
-            'required': True,
-            'type': verify_node,
-            'help': 'Zookeeper Node'
-        }
-    }
-
     all_argument = {
         'args': ['-a', '--all-hosts'],
         'kwargs': {
@@ -506,8 +578,8 @@ def cli():
 
 
     # -- SOLR - LIVE NODES -----------
-    cmd, help = COMMANDS['solr']
-    solr = subparsers.add_parser(cmd, help=help)
+    cmd, about = COMMANDS['solr']
+    solr = subparsers.add_parser(cmd, help=about)
     solr.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     solr.add_argument(*env_argument['args'], **env_argument['kwargs'])
     solr.add_argument(*all_argument['args'], **all_argument['kwargs'])
@@ -515,45 +587,45 @@ def cli():
         action='store_true', help='Open solr-admin in web-browser for resolved host')
 
     # -- SOLR - CLUSTERSTATE -------
-    cmd, help = COMMANDS['clusterstate']
-    cluster = subparsers.add_parser(cmd, help=help)
+    cmd, about = COMMANDS['clusterstate']
+    cluster = subparsers.add_parser(cmd, help=about)
     cluster.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     cluster.add_argument(*env_argument['args'], **env_argument['kwargs'])
     cluster.add_argument(*all_argument['args'], **all_argument['kwargs'])
 
     # -- WATCH ----------------------
-    cmd, help = COMMANDS['watch']
-    watch = subparsers.add_parser(cmd, help=help)
-    watch.add_argument('node', help='Zookeeper node')
-    watch.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
-    watch.add_argument(*env_argument['args'], **env_argument['kwargs'])
+    cmd, about = COMMANDS['watch']
+    watches = subparsers.add_parser(cmd, help=about)
+    watches.add_argument('node', help='Zookeeper node', type=verify_node)
+    watches.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
+    watches.add_argument(*env_argument['args'], **env_argument['kwargs'])
 
 
     # -- LS -------------------------
-    cmd, help = COMMANDS['ls']
-    ls = subparsers.add_parser(cmd, help=help)
-    ls.add_argument('node', help='Zookeeper node') # positional argument
+    cmd, about = COMMANDS['ls']
+    ls = subparsers.add_parser(cmd, help=about)
+    ls.add_argument('node', help='Zookeeper node', type=verify_node) # positional argument
     ls.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     ls.add_argument(*env_argument['args'], **env_argument['kwargs'])
     ls.add_argument(*all_argument['args'], **all_argument['kwargs'])
 
     # -- STATUS ---------------------
-    cmd, help = COMMANDS['status']
-    status = subparsers.add_parser(cmd, help=help)
+    cmd, about = COMMANDS['status']
+    status = subparsers.add_parser(cmd, help=about)
     status.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     status.add_argument(*env_argument['args'], **env_argument['kwargs'])
 
     # -- ADMIN ---------------------
-    cmd, help = COMMANDS['admin']
-    admin = subparsers.add_parser(cmd, help=help)
+    cmd, about = COMMANDS['admin']
+    admin = subparsers.add_parser(cmd, help=about)
     admin.add_argument('cmd', help='ZooKeeper Administrative Command', type=verify_cmd)
     admin.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     admin.add_argument(*env_argument['args'], **env_argument['kwargs'])
     
 
     # -- CONFIG ---------------------
-    cmd, help = COMMANDS['config']
-    envs = subparsers.add_parser(cmd, help=help)
+    cmd, about = COMMANDS['config']
+    envs = subparsers.add_parser(cmd, help=about)
     envs.add_argument('-c',  '--configuration', default=None, required=False, type=verify_json,
         help='Set the environments configuration located at %s, string passed must be valid json ' % config_path())
     envs.add_argument('-a',  '--add', default=None, required=False, type=verify_add,
