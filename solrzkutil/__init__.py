@@ -51,6 +51,10 @@ DIFF_STYLE = Fore.MAGENTA + Style.BRIGHT
 ZK_LIVE_NODES = '/live_nodes'
 ZK_CLUSTERSTATE = '/clusterstate.json'
 
+# the first event will always be triggered immediately to show the existing state of the node
+# instead of saying 'watch event' tell the user we are just displaying initial state.
+WATCH_COUNTER = 0
+
 ZK_ADMIN_CMDS = {
     'conf': {
         'help': 'Print details about serving configuration.',
@@ -357,7 +361,6 @@ def show_node(zookeepers, node, all_hosts=False):
                 
     return list(all_children)
 
-
 def watch(zookeepers, node):
     """
     Watch a particular zookeeper node for changes.
@@ -395,19 +398,15 @@ def watch(zookeepers, node):
 
     # put a watch on my znode
     children = zk.get_children(node)
-
-    # the first event will always be triggered immediately to show the existing state of the node
-    # instead of saying 'watch event' tell the user we are just displaying initial state.
-    
-    watch_counter = 0
     
     # If there are children, watch them.
     if children or node.endswith('/'):
         @zk.ChildrenWatch(node)
         def watch_children(children):
-            watch_counter += 1
+            global WATCH_COUNTER
+            WATCH_COUNTER += 1
             
-            if watch_counter <= 1:
+            if WATCH_COUNTER <= 1:
                 child_watch_str = 'Child Nodes:'
             else:
                 child_watch_str = 'Node Watch Event: '
@@ -423,9 +422,10 @@ def watch(zookeepers, node):
     # otherwise watch the node itself.
         @zk.DataWatch(node)
         def watch_data(data, stat, event):
-            watch_counter += 1
+            global WATCH_COUNTER
+            WATCH_COUNTER += 1
             
-            if watch_counter <= 1:
+            if WATCH_COUNTER <= 1:
                 data_watch_str = 'Content: (%s)' 
             else:
                 data_watch_str = 'Data Watch Event: (v%s)'
