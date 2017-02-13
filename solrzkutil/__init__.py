@@ -263,7 +263,7 @@ def show_node(zookeepers, node, all_hosts=False):
             continue
 
         children = zk.get_children(node)
-        all_children = all_children | set(children)
+        children.sort()
 
         print(style_header('Response From: %s [%s]' % (host, node)))
 
@@ -284,6 +284,7 @@ def show_node(zookeepers, node, all_hosts=False):
                 print(style_text(ch, INFO_STYLE, lpad=2))
 
         zk.stop()
+        all_children = all_children | set(children)
                 
     return list(all_children)
 
@@ -326,23 +327,33 @@ def watch(zookeepers, node):
     # put a watch on my znode
     children = zk.get_children(node)
 
+    # the first event will always be triggered immediately to show the existing state of the node
+    # instead of saying 'watch event' tell the user we are just displaying initial state.
+    child_watch_str = 'Child Nodes:'
+    data_watch_str = 'Content: (%s)' 
+    
     # If there are children, watch them.
-    if children:
+    if children or node.endswith('/'):
         @zk.ChildrenWatch(node)
         def watch_children(children):
+            global child_watch_str
+            children.sort()
             print('')
-            print(style_text("Watch Event: ", TITLE_STYLE))
+            print(style_text(child_watch_str, TITLE_STYLE))
             for ch in children:
                 print(style_text(ch, INFO_STYLE, lpad=2))
             print('')
+            child_watch_str = 'Node Watch Event: '
     else:
     # otherwise watch the node itself.
         @zk.DataWatch(node)
         def watch_data(data, stat, event):
+            global data_watch_str
             print('')
-            print(style_text("Watch Event: (%s)" % stat.version, TITLE_STYLE))
+            print(style_text(data_watch_str % stat.version, TITLE_STYLE))
             print(style_multiline(data, INFO_STYLE, lpad=2))
             print('')
+            data_watch_str = 'Data Watch Event: (v%s)'
 
 
     CHAR_WIDTH = 60
