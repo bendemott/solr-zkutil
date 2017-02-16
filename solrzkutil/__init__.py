@@ -256,7 +256,7 @@ def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
     zk_hosts = zk_hosts.split(',')
     root = '/'+root if root else ''
     
-    all_hosts = [h+root for h in zk_hosts]
+    all_hosts_list = [h+root for h in zk_hosts]
     
     if leader:
         zk_hosts = [get_leader(zk_hosts)]
@@ -264,7 +264,7 @@ def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
             raise RuntimeError('no leader available, from connections given')
     # make a list of each host individually, so they can be queried one by one for statistics.
     elif all_hosts:
-        zk_hosts = all_hosts
+        zk_hosts = all_hosts_list
     # otherwise pick a single host to query by random.
     else:
         zk_hosts = [choice(zk_hosts) + root]
@@ -312,16 +312,7 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
     """
     Print clusterstatus.json contents
     """
-    zk_hosts, root = zookeepers.split('/') if len(zookeepers.split('/')) > 1 else (zookeepers, None)
-    zk_hosts = zk_hosts.split(',')
-    root = '/'+root if root else ''
-
-    # If we've been asked to show the node for EACH zk node individually iterate through all hosts.
-    if all_hosts:
-        zk_hosts = [h+root for h in zk_hosts]
-    # otherwise pick a single host to query.
-    else:
-        zk_hosts = [choice(zk_hosts) + root]
+    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts)
 
     print('')
 
@@ -446,6 +437,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False):
                     mod_desc = style_text('now', STATS_STYLE)
                     
                 print(style_text('mod:', STATS_STYLE, lpad=3), mod_desc)
+                
             zk.stop()
             all_children = all_children | set(children)
                 
@@ -551,6 +543,7 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     """
     Execute an administrative command
     """
+    
     zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
     
     for host in zk_hosts:
@@ -692,6 +685,16 @@ def cli():
             'help': 'Query ensemble leader only'
         }
     }
+    
+    debug_argument = {
+        'args': ['--debug'],
+        'kwargs': {
+            'default': False,
+            'required': False,
+            'action': 'store_true',
+            'help': 'Show debug stats'
+        }
+    }
 
 
     # -- SOLR - LIVE NODES -----------
@@ -776,6 +779,7 @@ def main(argv=None):
         # when env is specified and valid, but zookeepers is not
         # env should have been resolved to a zookeeper host string.
         args['zookeepers'] = args['env']
+        
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
     if cmd == COMMANDS['solr'][0]:
