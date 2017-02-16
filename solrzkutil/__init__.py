@@ -59,6 +59,8 @@ GREEN_STYLE = Fore.GREEN + Style.BRIGHT
 ZK_LIVE_NODES = '/live_nodes'
 ZK_CLUSTERSTATE = '/clusterstate.json'
 
+MODE_LEADER = 'leader'
+
 # the first event will always be triggered immediately to show the existing state of the node
 # instead of saying 'watch event' tell the user we are just displaying initial state.
 WATCH_COUNTER = 0
@@ -234,8 +236,16 @@ def get_leader(zk_hosts):
     
         zk = KazooClient(hosts=host)
         zk.start()
-        properties = zk.command(cmd='srvr')
-        properties.split('\n')
+        properties_str = zk.command(cmd=b'srvr')
+        properties = properties_str.split('\n')
+        for line in properties:
+            if not line.strip().lower().startswith('mode:'):
+                continue
+            key, val = line.split(':')
+            if val.strip().lower() == MODE_LEADER:
+                return host
+        
+        zk.stop()
 
     
 def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
@@ -246,9 +256,16 @@ def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
     zk_hosts = zk_hosts.split(',')
     root = '/'+root if root else ''
     
-    if all_hosts:
-        zk_hosts = [h+root for h in zk_hosts]
-    # otherwise pick a single host to query.
+    all_hosts = [h+root for h in zk_hosts]
+    
+    if leader:
+        zk_hosts = [get_leader(zk_hosts)]
+        if not zk_hosts:
+            raise RuntimeError('no leader available, from connections given')
+    # make a list of each host individually, so they can be queried one by one for statistics.
+    elif all_hosts:
+        zk_hosts = all_hosts
+    # otherwise pick a single host to query by random.
     else:
         zk_hosts = [choice(zk_hosts) + root]
         
@@ -347,12 +364,12 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
         zk.stop()
  
     
-def show_node(zookeepers, node, all_hosts=False):
+def show_node(zookeepers, node, all_hosts=False, leader=False):
     """
     Show a zookeeper node on one or more servers.
     returns children of the requested node.
     """
-    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts)
+    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
 
     # we'll keep track of differences for this node between zookeepers.
     # because zookeeper keeps all nodes in-sync, there shouldn't be differences between the
@@ -436,10 +453,12 @@ def show_node(zookeepers, node, all_hosts=False):
         
     return list(all_children)
 
-def watch(zookeepers, node):
+def watch(zookeepers, node, leader=False):
     """
     Watch a particular zookeeper node for changes.
     """
+    
+    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
 
     def my_listener(state):
         if state == KazooState.LOST:
@@ -453,7 +472,7 @@ def watch(zookeepers, node):
             # what are we supposed to do here?
             print(style_text('Connected/Reconnected', INFO_STYLE, pad=2))
 
-    zk = KazooClient(hosts=zookeepers)
+    zk = KazooClient(hosts=zk_hosts)
     zk.start()
     zk_ver = '.'.join(map(str, zk.server_version()))
     zk_host = zk.hosts[zk.last_zxid]
@@ -683,6 +702,7 @@ def cli():
     solr.add_argument(*all_argument['args'], **all_argument['kwargs'])
     solr.add_argument('-b', '--browser', default=False, required=False,
         action='store_true', help='Open solr-admin in web-browser for resolved host')
+    solr.add_argument(*leader_argument['args'], **leader_argument['kwargs'])
 
     # -- SOLR - CLUSTERSTATE -------
     cmd, about = COMMANDS['clusterstate']
@@ -697,6 +717,7 @@ def cli():
     watches.add_argument('node', help='Zookeeper node', type=verify_node)
     watches.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     watches.add_argument(*env_argument['args'], **env_argument['kwargs'])
+    watches.add_argument(*leader_argument['args'], **leader_argument['kwargs'])
 
 
     # -- LS -------------------------
@@ -706,12 +727,14 @@ def cli():
     ls.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     ls.add_argument(*env_argument['args'], **env_argument['kwargs'])
     ls.add_argument(*all_argument['args'], **all_argument['kwargs'])
+    ls.add_argument(*leader_argument['args'], **leader_argument['kwargs'])
 
     # -- STATUS ---------------------
     cmd, about = COMMANDS['status']
     status = subparsers.add_parser(cmd, help=about)
     status.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     status.add_argument(*env_argument['args'], **env_argument['kwargs'])
+    status.add_argument(*leader_argument['args'], **leader_argument['kwargs'])
 
     # -- ADMIN ---------------------
     cmd, about = COMMANDS['admin']
@@ -756,7 +779,7 @@ def main(argv=None):
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
     if cmd == COMMANDS['solr'][0]:
-        hosts = show_node(zookeepers=args['zookeepers'], node=ZK_LIVE_NODES, all_hosts=args['all_hosts'])
+        hosts = show_node(zookeepers=args['zookeepers'], node=ZK_LIVE_NODES, all_hosts=args['all_hosts'], leader=args['leader'])
         if args.get('browser') and hosts:
             solr_admin = choice(hosts).replace('_solr', '/solr')
             # C:\Users\Scott\AppData\Local\Google\Chrome\Application\chrome.exe
@@ -767,17 +790,17 @@ def main(argv=None):
         clusterstate(zookeepers=args['zookeepers'], all_hosts=args['all_hosts'])
 
     elif cmd == COMMANDS['ls'][0]:
-        show_node(zookeepers=args['zookeepers'], node=args['node'], all_hosts=args['all_hosts'])
+        show_node(zookeepers=args['zookeepers'], node=args['node'], all_hosts=args['all_hosts'], leader=args['leader'])
 
     elif cmd == COMMANDS['watch'][0]:
-        watch(zookeepers=args['zookeepers'], node=args['node'])
+        watch(zookeepers=args['zookeepers'], node=args['node'], leader=args['leader'])
 
     elif cmd == COMMANDS['config'][0]:
         update_config(configuration=args['configuration'], add=args['add'])
 
     elif cmd == COMMANDS['status'][0]:
         # TODO improve this command so it is a combination of mntr, stat, cons, and ruok
-        admin_command(zookeepers=args['zookeepers'], command='stat')
+        admin_command(zookeepers=args['zookeepers'], command='stat', leader=args['leader'])
 
     elif cmd == COMMANDS['admin'][0]:
         admin_command(zookeepers=args['zookeepers'], command=args['cmd'], all_hosts=args['all_hosts'], leader=args['leader'])
