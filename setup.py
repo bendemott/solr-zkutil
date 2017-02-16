@@ -18,19 +18,12 @@ try:
 except ImportError:
     from distutils import setup
 
-REQUIRED_PYTHON_VERSION = (2, 7, 0)
 README_PATH = abspath(join(os.path.dirname(__file__), 'README.rst'))
 try:
     LONG_DESCRIPTION = open(README_PATH).read()
 except Exception as e:
     sys.stderr.write("Couldn't load README.rst - %s" % e)
     LONG_DESCRIPTION = ""
-
-# Python Version Check
-if sys.version_info < REQUIRED_PYTHON_VERSION:
-    sys.exit(
-        '%s requires Python %s or greater' % (__application__, REQUIRED_PYTHON_VERSION.join('.'))
-    )
     
 setup(
     name=__application__,
