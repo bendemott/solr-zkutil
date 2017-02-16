@@ -1,10 +1,12 @@
 #!/usr/bin/python
 from __future__ import print_function
+from __future__ import unicode_literals
 
 import os
 import sys
 import time
 import argparse
+from datetime import datetime, timedelta
 from textwrap import dedent
 import json
 from random import choice
@@ -14,6 +16,10 @@ from os.path import expanduser, expandvars, dirname, exists
 log = logging.getLogger()
 logging.basicConfig()
 
+import six
+from six.moves import input
+import pytz
+from tzlocal import get_localzone
 from kazoo.client import KazooClient
 from kazoo.client import KazooState
 from kazoo.protocol.states import EventType
@@ -47,6 +53,8 @@ ERROR_STYLE = Back.WHITE + Fore.RED + Style.BRIGHT
 INPUT_STYLE = Fore.WHITE + Style.BRIGHT
 BLUE_STYLE = Fore.BLUE + Style.BRIGHT
 DIFF_STYLE = Fore.MAGENTA + Style.BRIGHT
+STATS_STYLE = Fore.MAGENTA + Style.BRIGHT
+GREEN_STYLE = Fore.GREEN + Style.BRIGHT
 
 ZK_LIVE_NODES = '/live_nodes'
 ZK_CLUSTERSTATE = '/clusterstate.json'
@@ -188,12 +196,26 @@ def style_text(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, cha
     if not text:
         return ''
         
+    # PYthon 3 - byte strings showing as literals.
+    #char = char.encode('utf-8')
+    #text = text.encode('utf-8')
+    #restore= restore.encode('utf-8')
+
+    # Ensure we have unicode in both python 2/3
+    text    = six.text_type(text)
+    styles  = six.text_type(styles)
+    char    = six.text_type(char)
+    restore = six.text_type(restore)
+    reset_all = six.text_type(Style.RESET_ALL)
+    
     style = ''.join(styles)
     text = text.ljust(ljust, char)
     text = text.rjust(rjust, char)
     text = text.center(cen, char)
     text = char*(lpad+pad) + text + char*(rpad+pad)
-    return style + text + Style.RESET_ALL + restore
+    
+    return '%s%s%s%s' % (style, text, reset_all, restore)
+    #return style + text + Style.RESET_ALL + restore
 
 
 def style_multiline(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, char=' '):
@@ -206,6 +228,31 @@ def style_multiline(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0
         fmt_text += text + '\n'
     return fmt_text
 
+    
+def get_leader(zk_hosts):
+    for host in zk_hosts:
+    
+        zk = KazooClient(hosts=host)
+        zk.start()
+        properties = zk.command(cmd='srvr')
+        properties.split('\n')
+
+    
+def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
+    """
+    Returns [host1, host2, host3]
+    """
+    zk_hosts, root = zookeepers.split('/') if len(zookeepers.split('/')) > 1 else (zookeepers, None)
+    zk_hosts = zk_hosts.split(',')
+    root = '/'+root if root else ''
+    
+    if all_hosts:
+        zk_hosts = [h+root for h in zk_hosts]
+    # otherwise pick a single host to query.
+    else:
+        zk_hosts = [choice(zk_hosts) + root]
+        
+    return zk_hosts
 
 def update_config(configuration=None, add=None):
     """
@@ -236,7 +283,7 @@ def update_config(configuration=None, add=None):
     print("")
 
     # Get permission to replace the existing configuration.
-    if raw_input(style_text("Replace configuration? (y/n): ", INPUT_STYLE)).lower() not in ('y', 'yes'):
+    if input(style_text("Replace configuration? (y/n): ", INPUT_STYLE)).lower() not in ('y', 'yes'):
         print("  ...Cancel")
         return
 
@@ -280,7 +327,7 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
 
         print(style_header('Response From: %s [%s]' % (host, node)))
             
-        state = zk.get(node)[0]
+        state = bytes.decode(zk.get(node)[0])
         
         if not first_state:
             first_state = state
@@ -298,25 +345,14 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
             print(style_text(line, style, lpad=4))
             
         zk.stop()
-    
+ 
     
 def show_node(zookeepers, node, all_hosts=False):
     """
     Show a zookeeper node on one or more servers.
     returns children of the requested node.
     """
-    zk_hosts, root = zookeepers.split('/') if len(zookeepers.split('/')) > 1 else (zookeepers, None)
-    zk_hosts = zk_hosts.split(',')
-    root = '/'+root if root else ''
-
-    # If we've been asked to show the node for EACH zk node individually iterate through all hosts.
-    if all_hosts:
-        zk_hosts = [h+root for h in zk_hosts]
-    # otherwise pick a single host to query.
-    else:
-        zk_hosts = [choice(zk_hosts) + root]
-
-    print('')
+    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts)
 
     # we'll keep track of differences for this node between zookeepers.
     # because zookeeper keeps all nodes in-sync, there shouldn't be differences between the
@@ -328,37 +364,76 @@ def show_node(zookeepers, node, all_hosts=False):
         zk = KazooClient(hosts=host)
         zk.start()
 
+        print('')
+        
         # If the node doesn't exist... just let the user know.
         if not zk.exists(node):
             node_str = style_text(node, BLUE_STYLE, restore=ERROR_STYLE)
             zk_str = style_text(host, BLUE_STYLE, restore=ERROR_STYLE)
-            print(style_text('No node [%s] on %s' % (node_str, zk_str), ERROR_STYLE))
+            print(style_text('No node [%s] on %s' % (node_str, zk_str), ERROR_STYLE, pad=2))
             continue
 
-        children = zk.get_children(node)
-        children.sort()
-
-        print(style_header('Response From: %s [%s]' % (host, node)))
-
-        if not children:
+        if len(zk_hosts) == 1:
+            print(style_header('Response From: %s [%s]' % (host, node)))
+        else:
+            print(style_text('Response From: %s [%s]' % (host, node), HEADER_STYLE, pad=2))
             
-            contents = zk.get(node)[0]
-            if contents:
+        # Query ZooKeeper for the node.
+        content, zstats = zk.get(node)
+        
+        # --- Print Node Stats -------------------------
+        # get local timezone, assume server-time is UTC
+        local_tz = get_localzone() 
+        znode_modified_utc = datetime.utcfromtimestamp(zstats.mtime / 1000).replace(tzinfo=pytz.utc)
+        znode_modified_local = znode_modified_utc.astimezone(local_tz)
+        znode_modified = znode_modified_local.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(znode_modified, INPUT_STYLE))
+        print(style_text('Version:', STATS_STYLE, lpad=2, rjust=9), style_text(str(zstats.version), INPUT_STYLE))
+        print('')
+
+        # --- Print Child Nodes, or Node Content -------
+        if not zstats.numChildren:
+            zcontent = bytes.decode(content or b'')
+            if zcontent:
                 print(style_text("Contents:", TITLE_STYLE, lpad=2))
-                print(style_multiline(contents, INFO_STYLE, lpad=4))
+                print(style_multiline(zcontent, INFO_STYLE, lpad=4))
             else:
                 print(style_text("... No child nodes", INFO_STYLE, lpad=2))
-
-        for ch in children:
-            if all_children and ch not in all_children:
-                # if this child is unique / different to this zk host, color it differently.
-                print(style_text(ch, INPUT_STYLE, lpad=2))
-            else:
-                print(style_text(ch, INFO_STYLE, lpad=2))
-
-        zk.stop()
-        all_children = all_children | set(children)
+        else:
+            children = zk.get_children(node)
+            children.sort()
+            cwidth = max([len(c) for c in children])
+            for ch in children:
+                _, czstats = zk.get('%s/%s' % (node, ch))
+            
+                if all_children and ch not in all_children:
+                    # if this child is unique / different to this zk host, color it differently.
+                    print(style_text(ch, INPUT_STYLE, lpad=2, ljust=cwidth), end='')
+                else:
+                    print(style_text(ch, INFO_STYLE, lpad=2, ljust=cwidth), end='')
+                    
+                print(style_text('v:', STATS_STYLE, lpad=3), style_text(str(czstats.version), INPUT_STYLE, ljust=3), end='')
+                print(style_text('eph:', STATS_STYLE, lpad=3), style_text('yes' if czstats.ephemeralOwner else 'no', INPUT_STYLE), end='')
                 
+                mod_elapsed = datetime.utcnow() - datetime.utcfromtimestamp(zstats.mtime / 1000)
+                if mod_elapsed >= timedelta(hours=48):
+                    mod_desc = 'days ago'
+                elif mod_elapsed >= timedelta(hours=2):
+                    mod_desc = style_text('hours ago', INPUT_STYLE)
+                elif mod_elapsed >= timedelta(minutes=10):
+                    mod_desc = style_text('minutes ago', GREEN_STYLE)
+                elif mod_elapsed >= timedelta(minutes=1):
+                    mod_desc = style_text('recently', INFO_STYLE)
+                else:
+                    mod_desc = style_text('now', STATS_STYLE)
+                    
+                print(style_text('mod:', STATS_STYLE, lpad=3), mod_desc)
+            zk.stop()
+            all_children = all_children | set(children)
+                
+ 
+        
     return list(all_children)
 
 def watch(zookeepers, node):
@@ -425,6 +500,8 @@ def watch(zookeepers, node):
             global WATCH_COUNTER
             WATCH_COUNTER += 1
             
+            data = data.decode('utf-8')
+            
             if WATCH_COUNTER <= 1:
                 data_watch_str = 'Content: (%s)' 
             else:
@@ -451,21 +528,32 @@ def watch(zookeepers, node):
     zk.stop()
 
 
-def admin_command(zookeepers, command):
+def admin_command(zookeepers, command, all_hosts=False, leader=False):
     """
     Execute an administrative command
     """
-    zk = KazooClient(hosts=zookeepers)
-    zk.start()
-    status = zk.command(cmd=command)
-    zk_ver = '.'.join(map(str, zk.server_version()))
-    zk_host = zk.hosts[zk.last_zxid]
-    zk_host = ':'.join(map(str, zk_host))
+    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
     
-    zk.stop()
+    for host in zk_hosts:
+    
+        print('')
+    
+        zk = KazooClient(hosts=host)
+        zk.start()
+        status = zk.command(cmd=str.encode(command))
+        zk_ver = '.'.join(map(str, zk.server_version()))
+        zk_host = zk.hosts[zk.last_zxid]
+        zk_host = ':'.join(map(str, zk_host))
+        
+        zk.stop()
+        
+        if len(zk_hosts) == 1:
+            print(style_header('ZK Command [%s] on %s v%s' % (command, zk_host, zk_ver)))
+        else:
+            print(style_text('ZK Command [%s] on %s v%s' % (command, zk_host, zk_ver), HEADER_STYLE, pad=2))
 
-    print(style_header('ZK Command [%s] on %s v%s' % (command, zk_host, zk_ver)))
-    print(style_multiline(status, INFO_STYLE, lpad=2))
+        print(style_multiline(status, INFO_STYLE, lpad=2))
+
 
 def cli():
     """
@@ -487,7 +575,7 @@ def cli():
             raise argparse.ArgumentTypeError('Cannot read configuration %s' % e)
 
         if arg not in env_config:
-            raise argparse.ArgumentTypeError('Invalid Environment %s ... Valid: [%s]' % (arg, ', '.join(env_config.keys())))
+            raise argparse.ArgumentTypeError('Invalid Environment %s ... Valid: [%s]' % (arg, ', '.join(list(env_config))))
 
         return env_config[arg]
 
@@ -562,7 +650,7 @@ def cli():
             'type': verify_env,
             'help': ('Connect to zookeeper using one of the configured environments. \n'
                     'Note: to view or modify config use the "%s" sub-command. \n'
-                    'Configured Environments: [%s]' % (COMMANDS['config'][0], ', '.join(env_config.keys())))
+                    'Configured Environments: [%s]' % (COMMANDS['config'][0], ', '.join(list(env_config))))
         }
     }
 
@@ -573,6 +661,16 @@ def cli():
             'required': False,
             'action': 'store_true',
             'help': 'Show response from all zookeeper hosts'
+        }
+    }
+    
+    leader_argument = {
+        'args': ['-l', '--leader'],
+        'kwargs': {
+            'default': False,
+            'required': False,
+            'action': 'store_true',
+            'help': 'Query ensemble leader only'
         }
     }
 
@@ -621,7 +719,8 @@ def cli():
     admin.add_argument('cmd', help='ZooKeeper Administrative Command', type=verify_cmd)
     admin.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
     admin.add_argument(*env_argument['args'], **env_argument['kwargs'])
-    
+    admin.add_argument(*all_argument['args'], **all_argument['kwargs'])
+    admin.add_argument(*leader_argument['args'], **leader_argument['kwargs'])
 
     # -- CONFIG ---------------------
     cmd, about = COMMANDS['config']
@@ -677,12 +776,13 @@ def main(argv=None):
         update_config(configuration=args['configuration'], add=args['add'])
 
     elif cmd == COMMANDS['status'][0]:
+        # TODO improve this command so it is a combination of mntr, stat, cons, and ruok
         admin_command(zookeepers=args['zookeepers'], command='stat')
 
     elif cmd == COMMANDS['admin'][0]:
-        admin_command(zookeepers=args['zookeepers'], command=args['cmd'])
+        admin_command(zookeepers=args['zookeepers'], command=args['cmd'], all_hosts=args['all_hosts'], leader=args['leader'])
     else:
-        raise ValueError('unmatched command:', cmd)
+        parser.print_help()
 
     print("")
 

@@ -35,7 +35,7 @@ if sys.version_info < REQUIRED_PYTHON_VERSION:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.87',
+    version='0.88',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),
@@ -46,6 +46,8 @@ setup(
     install_requires=[
         'colorama',        # Console colors
         'kazoo',           # ZooKeeper api
+        'tzlocal',         # Use your machines local timezone for dates.
+        'six',
     ],
     package_data={'solrzkutil': ['bin/solr-zkutil.bat']},
     keywords = ['solr', 'zookeeper', 'cli'], # arbitrary keywords
