@@ -12,7 +12,7 @@ import json
 from random import choice
 import webbrowser
 import logging
-from os.path import expanduser, expandvars, dirname, exists
+from os.path import expanduser, expandvars, dirname, exists, join
 log = logging.getLogger()
 logging.basicConfig()
 
@@ -23,7 +23,7 @@ from tzlocal import get_localzone
 from kazoo.client import KazooClient
 from kazoo.client import KazooState
 from kazoo.protocol.states import EventType
-
+from kazoo.handlers.threading import KazooTimeoutError
 import colorama
 from colorama import Fore, Back, Style
 
@@ -154,6 +154,21 @@ ZK_ADMIN_CMDS = {
     },
 }
 
+ZNODE_DEBUG_ATTRS = [
+    'aversion',
+    'cversion',
+    'version',
+    'numChildren',
+    'ctime', 
+    'mtime',   
+    'czxid',
+    'mzxid',
+    'pzxid',
+    'dataLength',
+    'ephemeralOwner',
+]
+
+
 NEW_TAB = 2
 
 def config_path():
@@ -235,7 +250,12 @@ def get_leader(zk_hosts):
     for host in zk_hosts:
     
         zk = KazooClient(hosts=host)
-        zk.start()
+        try:
+            zk.start()
+        except KazooTimeoutError as e:
+            print('ZK Timeout host: [%s], %s' % (host, e))
+            continue
+            
         properties_str = zk.command(cmd=b'srvr')
         properties = properties_str.split('\n')
         for line in properties:
@@ -324,7 +344,11 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
     for host in zk_hosts:
         # connect to zookeeper
         zk = KazooClient(hosts=host)
-        zk.start()
+        try:
+            zk.start()
+        except KazooTimeoutError as e:
+            print('ZK Timeout host: [%s], %s' % (host, e))
+            continue
 
         # If the node doesn't exist... just let the user know.
         if not zk.exists(node):
@@ -355,9 +379,15 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
         zk.stop()
  
     
-def show_node(zookeepers, node, all_hosts=False, leader=False):
+def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, interactive=False):
     """
     Show a zookeeper node on one or more servers.
+    If the node has children, the children are displayed,
+    If the node doesn't have children, the contents of the node are displayed.
+    If leader is specified, only the leader is queried for the node
+    If all_hosts is specified, each zk host provided is queried individually... if the results 
+    are different between nodes, the child nodes that are different will be highlighted.
+    
     returns children of the requested node.
     """
     zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
@@ -370,7 +400,11 @@ def show_node(zookeepers, node, all_hosts=False, leader=False):
     for host in zk_hosts:
         # connect to zookeeper
         zk = KazooClient(hosts=host)
-        zk.start()
+        try:
+            zk.start()
+        except KazooTimeoutError as e:
+            print('ZK Timeout host: [%s], %s' % (host, e))
+            continue
 
         print('')
         
@@ -388,17 +422,34 @@ def show_node(zookeepers, node, all_hosts=False, leader=False):
             
         # Query ZooKeeper for the node.
         content, zstats = zk.get(node)
+        #  print(dir(zstats))
+        # print(getattr(zstats, 'czxid'))
         
         # --- Print Node Stats -------------------------
         znode_unix_time = zstats.mtime / 1000
+        # 
         local_timezone = time.tzname[time.localtime().tm_isdst]
-        mod_time = pendulum.fromtimestamp(znode_unix_time, 'UTC')
+        is_dst = time.daylight and time.localtime().tm_isdst
+        offset_hour = time.altzone / 3600 if is_dst else time.timezone / 3600
+        timezone = 'Etc/GMT%+d' % offset_hour
+        mod_time = pendulum.fromtimestamp(znode_unix_time, timezone)
         mod_time = mod_time.in_timezone(local_timezone)
-        local_time_str = mod_time.to_formatted_date_string()
+        local_time_str = mod_time.to_day_datetime_string()
 
-        print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(local_time_str, INPUT_STYLE))
-        print(style_text('Version:', STATS_STYLE, lpad=2, rjust=9), style_text(str(zstats.version), INPUT_STYLE))
+
+        if debug:
+            dbg_rjust = max(map(len, ZNODE_DEBUG_ATTRS))
+            print(style_text("Node Stats:", TITLE_STYLE, lpad=2))
+            for attr_name in ZNODE_DEBUG_ATTRS:
+                attr_val = getattr(zstats, attr_name)
+                if 'time' in attr_name and attr_val > 1:
+                    attr_val = pendulum.fromtimestamp(int(attr_val) / 1000, timezone).in_timezone(local_timezone).to_day_datetime_string()
+                print(style_text(attr_name, STATS_STYLE, lpad=4, rjust=dbg_rjust), style_text(attr_val, INPUT_STYLE))
+        else:
+            print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(local_time_str, INPUT_STYLE))
+            print(style_text('Version:', STATS_STYLE, lpad=2, rjust=9), style_text(str(zstats.version), INPUT_STYLE))
         print('')
+
 
         # --- Print Child Nodes, or Node Content -------
         if not zstats.numChildren:
@@ -412,31 +463,39 @@ def show_node(zookeepers, node, all_hosts=False, leader=False):
             children = zk.get_children(node)
             children.sort()
             cwidth = max([len(c) for c in children])
+            print(style_text("Child Nodes:", TITLE_STYLE, lpad=2))
             for ch in children:
-                _, czstats = zk.get('%s/%s' % (node, ch))
-            
+                child_path = join(node, ch)
+                _, czstats = zk.get(child_path)
                 if all_children and ch not in all_children:
                     # if this child is unique / different to this zk host, color it differently.
-                    print(style_text(ch, INPUT_STYLE, lpad=2, ljust=cwidth), end='')
+                    print(style_text(ch, INPUT_STYLE, lpad=4, ljust=cwidth), end='')
                 else:
-                    print(style_text(ch, INFO_STYLE, lpad=2, ljust=cwidth), end='')
+                    print(style_text(ch, INFO_STYLE, lpad=4, ljust=cwidth), end='')
                     
-                print(style_text('v:', STATS_STYLE, lpad=3), style_text(str(czstats.version), INPUT_STYLE, ljust=3), end='')
+                mod_ver = czstats.version or czstats.cversion
+                print(style_text('v:', STATS_STYLE, lpad=3), style_text(str(mod_ver), INPUT_STYLE, ljust=3), end='')
                 print(style_text('eph:', STATS_STYLE, lpad=3), style_text('yes' if czstats.ephemeralOwner else 'no', INPUT_STYLE), end='')
                 
-                mod_elapsed = datetime.utcnow() - datetime.utcfromtimestamp(zstats.mtime / 1000)
+                mod_datetime = datetime.utcfromtimestamp(czstats.mtime / 1000)
+                mod_elapsed = datetime.utcnow() - mod_datetime
                 if mod_elapsed >= timedelta(hours=48):
-                    mod_desc = 'days ago'
+                    mod_style = ''
                 elif mod_elapsed >= timedelta(hours=2):
-                    mod_desc = style_text('hours ago', INPUT_STYLE)
+                    mod_style = INPUT_STYLE
                 elif mod_elapsed >= timedelta(minutes=10):
-                    mod_desc = style_text('minutes ago', GREEN_STYLE)
+                    mod_style = GREEN_STYLE
                 elif mod_elapsed >= timedelta(minutes=1):
-                    mod_desc = style_text('recently', INFO_STYLE)
+                    mod_style = INFO_STYLE
                 else:
-                    mod_desc = style_text('now', STATS_STYLE)
+                    mod_style =  STATS_STYLE
                     
-                print(style_text('mod:', STATS_STYLE, lpad=3), mod_desc)
+                if mod_datetime.year != 1970:
+                    mod_desc = pendulum.fromtimestamp(czstats.mtime / 1000, 'UTC').diff_for_humans()
+                else:
+                    mod_desc = 'none'
+                    
+                print(style_text('mod:', STATS_STYLE, lpad=3), style_text(mod_desc, mod_style))
                 
             zk.stop()
             all_children = all_children | set(children)
@@ -465,7 +524,11 @@ def watch(zookeepers, node, leader=False):
             print(style_text('Connected/Reconnected', INFO_STYLE, pad=2))
 
     zk = KazooClient(hosts=zk_hosts)
-    zk.start()
+    try:
+        zk.start()
+    except KazooTimeoutError as e:
+        print('ZK Timeout host: [%s], %s' % (host, e))
+      
     zk_ver = '.'.join(map(str, zk.server_version()))
     zk_host = zk.hosts[zk.last_zxid]
     zk_host = ':'.join(map(str, zk_host))
@@ -731,6 +794,7 @@ def cli():
     ls.add_argument(*env_argument['args'], **env_argument['kwargs'])
     ls.add_argument(*all_argument['args'], **all_argument['kwargs'])
     ls.add_argument(*leader_argument['args'], **leader_argument['kwargs'])
+    ls.add_argument(*debug_argument['args'], **debug_argument['kwargs'])
 
     # -- STATUS ---------------------
     cmd, about = COMMANDS['status']
@@ -794,7 +858,7 @@ def main(argv=None):
         clusterstate(zookeepers=args['zookeepers'], all_hosts=args['all_hosts'])
 
     elif cmd == COMMANDS['ls'][0]:
-        show_node(zookeepers=args['zookeepers'], node=args['node'], all_hosts=args['all_hosts'], leader=args['leader'])
+        show_node(zookeepers=args['zookeepers'], node=args['node'], all_hosts=args['all_hosts'], leader=args['leader'], debug=args['debug'])
 
     elif cmd == COMMANDS['watch'][0]:
         watch(zookeepers=args['zookeepers'], node=args['node'], leader=args['leader'])
