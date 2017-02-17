@@ -28,7 +28,7 @@ except Exception as e:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.89',
+    version='0.90',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),
@@ -39,8 +39,8 @@ setup(
     install_requires=[
         'colorama',        # Console colors
         'kazoo',           # ZooKeeper api
-        'tzlocal',         # Use your machines local timezone for dates.
         'six',
+        'pendulum',
     ],
     classifiers=[
         "Development Status :: 5 - Production/Stable",

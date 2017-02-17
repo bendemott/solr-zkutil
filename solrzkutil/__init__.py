@@ -6,7 +6,7 @@ import os
 import sys
 import time
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from textwrap import dedent
 import json
 from random import choice
@@ -16,9 +16,9 @@ from os.path import expanduser, expandvars, dirname, exists
 log = logging.getLogger()
 logging.basicConfig()
 
+import pendulum
 import six
 from six.moves import input
-import pytz
 from tzlocal import get_localzone
 from kazoo.client import KazooClient
 from kazoo.client import KazooState
@@ -390,13 +390,13 @@ def show_node(zookeepers, node, all_hosts=False, leader=False):
         content, zstats = zk.get(node)
         
         # --- Print Node Stats -------------------------
-        # get local timezone, assume server-time is UTC
-        local_tz = get_localzone() 
-        znode_modified_utc = datetime.utcfromtimestamp(zstats.mtime / 1000).replace(tzinfo=pytz.utc)
-        znode_modified_local = znode_modified_utc.astimezone(local_tz)
-        znode_modified = znode_modified_local.strftime('%Y-%m-%dT%H:%M:%SZ')
+        znode_unix_time = zstats.mtime / 1000
+        local_timezone = time.tzname[time.localtime().tm_isdst]
+        mod_time = pendulum.fromtimestamp(znode_unix_time, 'UTC')
+        mod_time = mod_time.in_timezone(local_timezone)
+        local_time_str = mod_time.to_formatted_date_string()
 
-        print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(znode_modified, INPUT_STYLE))
+        print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(local_time_str, INPUT_STYLE))
         print(style_text('Version:', STATS_STYLE, lpad=2, rjust=9), style_text(str(zstats.version), INPUT_STYLE))
         print('')
 
