@@ -443,7 +443,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
             for attr_name in ZNODE_DEBUG_ATTRS:
                 attr_val = getattr(zstats, attr_name)
                 if 'time' in attr_name and attr_val > 1:
-                    attr_val = pendulum.fromtimestamp(int(attr_val) / 1000, timezone).in_timezone(local_timezone).to_day_datetime_string()
+                    attr_val = pendulum.fromtimestamp(int(attr_val) / 1000, timezone).in_timezone(timezone).to_day_datetime_string()
                 print(style_text(attr_name, STATS_STYLE, lpad=4, rjust=dbg_rjust), style_text(attr_val, INPUT_STYLE))
         else:
             print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(local_time_str, INPUT_STYLE))
