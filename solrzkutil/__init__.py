@@ -428,12 +428,12 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
         # --- Print Node Stats -------------------------
         znode_unix_time = zstats.mtime / 1000
         # 
-        local_timezone = time.tzname[time.localtime().tm_isdst]
+        # local_timezone = time.tzname[time.localtime().tm_isdst] DO NOT USE THIS
         is_dst = time.daylight and time.localtime().tm_isdst
         offset_hour = time.altzone / 3600 if is_dst else time.timezone / 3600
         timezone = 'Etc/GMT%+d' % offset_hour
         mod_time = pendulum.fromtimestamp(znode_unix_time, timezone)
-        mod_time = mod_time.in_timezone(local_timezone)
+        mod_time = mod_time.in_timezone(timezone)
         local_time_str = mod_time.to_day_datetime_string()
 
 
