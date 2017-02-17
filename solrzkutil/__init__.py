@@ -465,7 +465,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
             cwidth = max([len(c) for c in children])
             print(style_text("Child Nodes:", TITLE_STYLE, lpad=2))
             for ch in children:
-                child_path = join(node, ch)
+                child_path = node+ch if node.endswith('/') else node+'/'+ch
                 _, czstats = zk.get(child_path)
                 if all_children and ch not in all_children:
                     # if this child is unique / different to this zk host, color it differently.
@@ -509,7 +509,7 @@ def watch(zookeepers, node, leader=False):
     Watch a particular zookeeper node for changes.
     """
     
-    zk_hosts = parse_zk_hosts(zookeepers, leader=leader)
+    zk_hosts = parse_zk_hosts(zookeepers, leader=leader)[0]
 
     def my_listener(state):
         if state == KazooState.LOST:
