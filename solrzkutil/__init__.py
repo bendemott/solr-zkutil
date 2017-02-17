@@ -509,7 +509,7 @@ def watch(zookeepers, node, leader=False):
     Watch a particular zookeeper node for changes.
     """
     
-    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
+    zk_hosts = parse_zk_hosts(zookeepers, leader=leader)
 
     def my_listener(state):
         if state == KazooState.LOST:
