@@ -161,7 +161,7 @@ Usage
       -h, --help            show this help message and exit
       
       
-.. |livenodesgif| image:: http://i.imgur.com/uTROF7Z.gifv
+.. |livenodesgif| image:: http://i.imgur.com/uTROF7Z.gif
 .. |environmentconf| image:: http://i.imgur.com/v1df7K9.png
 .. |environmentadd| image:: http://i.imgur.com/UL1peUD.png
 .. |livenodes| image:: http://i.imgur.com/QpQt1Xs.png
