@@ -16,6 +16,7 @@ Runs on **python3** or **python2**!
 
 Features
 --------
+|livenodesgif|
 
 Supports environment aliases for ZooKeeper Connections
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
@@ -159,7 +160,8 @@ Usage
     optional arguments:
       -h, --help            show this help message and exit
       
-
+      
+.. |livenodesgif| image:: http://i.imgur.com/uTROF7Z.gifv
 .. |environmentconf| image:: http://i.imgur.com/v1df7K9.png
 .. |environmentadd| image:: http://i.imgur.com/UL1peUD.png
 .. |livenodes| image:: http://i.imgur.com/QpQt1Xs.png
