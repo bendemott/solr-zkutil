@@ -10,7 +10,9 @@ information about your **Solr** ZooKeeper cluster.
 If you live in an ethereal environment in which solr-hosts are frequently changing, or you have
 many different solr environments to keep track of, this tool is for you!
 
-The program is designed to work with Windows or Linux hosts, and is easy to install.
+The program is designed to work with **Windows** or **Linux** hosts, and is easy to install.
+
+Runs on **python3** or **python2**!
 
 Features
 --------
@@ -70,6 +72,13 @@ View the contents/children of a node across all ensemble (cluster) members quick
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 |lsnodesall|
 
+View all nodes, with stats info
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+|lsnodesdebug|
+
+Execute admin commands across all nodes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+|adminall|
 
 Installation
 ------------
@@ -156,4 +165,6 @@ Usage
 .. |livenodes| image:: http://i.imgur.com/QpQt1Xs.png
 .. |watchnode| image:: http://i.imgur.com/9S9x9wb.png
 .. |admincmd| image:: http://i.imgur.com/Wm1DpmL.png
-.. |lsnodesall| image:: http://i.imgur.com/yz33NXI.png
+.. |lsnodesall| image:: http://i.imgur.com/Lk1yVtB.png
+.. |lsnodesdebug| image:: http://i.imgur.com/mcl54I5.png
+.. |adminall| image:: http://i.imgur.com/aDqCdzE.png
