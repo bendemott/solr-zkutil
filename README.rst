@@ -86,9 +86,11 @@ Installation
 
 Windows
 ^^^^^^^
-On windows install ``Python 2.7``, and ensure Python 2.7 ``exe`` and ``Scripts`` paths are configured 
+On windows install ``Python 2.7`` or ``Python 3.3+``, and ensure Python ``exe`` and ``Scripts`` paths are configured 
 to be on your Windows Path environment, and the program should be accessible through ``PowerShell``
-or ``cmd.exe``
+or ``cmd.exe``.  
+
+Setting up Python Paths is an option during the installation of the Python Package on Windows, I highly suggest you check the box, or mark the feature **add Python to system path** so this step is accomplished for you.
 
 `Note: I will try to add a bundled exe installer soon for Windows`
 
@@ -97,7 +99,32 @@ or ``cmd.exe``
 - ``C:\Python27``
 - ``C:\Python27\Scripts``
 
+The ``pip`` command is bundled with the Python Windows installation.
+
 Once you have this configured you should be able to also execute ``pip`` without specifying its path.
+
+Linux
+^^^^^
+A recent version of Python ships with most linux distributions, if you don't have pip
+install it with (ubuntu/debian)::
+
+    sudo apt-get install python-pip
+    
+(Fedora)::
+
+    sudo dnf install python-pip
+    
+There are no additional special instructions on Linux.
+
+Installing from PyPi (recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+::
+
+    pip install solr-zkutil
+    
+Or to update your solr-zkutil to the latest version::
+
+    pip install solr-zkutil --upgrade
 
 Install Manually
 ^^^^^^^^^^^^^^^^
@@ -114,11 +141,6 @@ Install from pip/github
 
     pip install git+https://github.com/bendemott/solr-zkutil.git
 
-Installing from PyPi
-^^^^^^^^^^^^^^^^^^^^
-::
-
-    pip install solr-zkutil
 
 Program Commands
 ----------------
