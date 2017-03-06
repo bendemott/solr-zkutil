@@ -249,7 +249,7 @@ def style_multiline(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0
 def get_leader(zk_hosts):
     for host in zk_hosts:
     
-        zk = KazooClient(hosts=host)
+        zk = KazooClient(hosts=host, read_only=True)
         try:
             zk.start()
         except KazooTimeoutError as e:
@@ -343,7 +343,7 @@ def clusterstate(zookeepers, all_hosts, node='clusterstate.json'):
     first_state = None
     for host in zk_hosts:
         # connect to zookeeper
-        zk = KazooClient(hosts=host)
+        zk = KazooClient(hosts=host, read_only=True)
         try:
             zk.start()
         except KazooTimeoutError as e:
@@ -399,7 +399,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
 
     for host in zk_hosts:
         # connect to zookeeper
-        zk = KazooClient(hosts=host)
+        zk = KazooClient(hosts=host, read_only=True)
         try:
             zk.start()
         except KazooTimeoutError as e:
@@ -523,7 +523,7 @@ def watch(zookeepers, node, leader=False):
             # what are we supposed to do here?
             print(style_text('Connected/Reconnected', INFO_STYLE, pad=2))
 
-    zk = KazooClient(hosts=zk_hosts)
+    zk = KazooClient(hosts=zk_hosts, read_only=True)
     try:
         zk.start()
     except KazooTimeoutError as e:
@@ -613,7 +613,7 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     
         print('')
     
-        zk = KazooClient(hosts=host)
+        zk = KazooClient(hosts=host, read_only=True)
         zk.start()
         status = zk.command(cmd=str.encode(command))
         zk_ver = '.'.join(map(str, zk.server_version()))
