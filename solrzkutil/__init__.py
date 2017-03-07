@@ -504,6 +504,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
         
     return list(all_children)
 
+    
 def watch(zookeepers, node, leader=False):
     """
     Watch a particular zookeeper node for changes.
@@ -615,7 +616,8 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     
         zk = KazooClient(hosts=host, read_only=True)
         zk.start()
-        status = zk.command(cmd=str.encode(command))
+        command = six.text_type(command).encode('utf-8')
+        status = zk.command(cmd=command)
         zk_ver = '.'.join(map(str, zk.server_version()))
         zk_host = zk.hosts[zk.last_zxid]
         zk_host = ':'.join(map(str, zk_host))
@@ -674,6 +676,7 @@ def cli():
 
         return arg
 
+        
     def verify_add(arg):
         if '=' not in arg:
             raise argparse.ArgumentTypeError("You must use the syntax ENVIRONMENT=127.0.0.1:2181")
@@ -682,19 +685,22 @@ def cli():
 
         return {env.strip(): zk.strip()}
 
-
+        
+        
     def verify_node(arg):
         if not arg.startswith('/'):
             raise argparse.ArgumentTypeError("Zookeeper nodes start with /")
 
         return arg
 
+        
     def verify_cmd(arg):
         if arg.lower() not in ZK_ADMIN_CMDS:
             raise argparse.ArgumentTypeError("Invalid command '%s'... \nValid Commands: %s" % (arg, '\n    '.join(ZK_ADMIN_CMDS)))
 
         return arg.lower()
 
+        
     # Top level parser
     parser = argparse.ArgumentParser(prog=__application__)
     subparsers = parser.add_subparsers(help='--- available sub-commands ---', dest='command')
