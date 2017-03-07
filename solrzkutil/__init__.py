@@ -212,11 +212,6 @@ def style_header(text, width = 0):
 def style_text(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, char=' ', restore=''):
     if not text:
         return ''
-        
-    # PYthon 3 - byte strings showing as literals.
-    #char = char.encode('utf-8')
-    #text = text.encode('utf-8')
-    #restore= restore.encode('utf-8')
 
     # Ensure we have unicode in both python 2/3
     text    = six.text_type(text)
