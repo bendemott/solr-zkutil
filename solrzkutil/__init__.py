@@ -602,7 +602,7 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     """
     Execute an administrative command
     """
-    
+    command = six.text_type(command) # ensure we have unicode py2/py3
     zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
     
     for host in zk_hosts:
@@ -611,8 +611,9 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     
         zk = KazooClient(hosts=host, read_only=True)
         zk.start()
-        command = six.text_type(command).encode('utf-8')
-        status = zk.command(cmd=command)
+        # Kazoo expects an object with the 'buffer' inteface.
+        strcmd = command.encode('utf-8')
+        status = zk.command(cmd=strcmd)
         zk_ver = '.'.join(map(str, zk.server_version()))
         zk_host = zk.hosts[zk.last_zxid]
         zk_host = ':'.join(map(str, zk_host))
