@@ -3,6 +3,16 @@ setup.py installation file for ``solr-zkutil``
 
 To execute installation run: ``sudo python setup.py install`` from the same
 directory as this setup.py file.
+
+
+Maintainers Note... Upload to PYPI:
+    1.) Update version below to increment number
+
+    2.) Upload to pypi test (to test)
+    python setup.py sdist upload -r pypitest
+    
+    3.) Upload to pypi prod
+    python setup.py sdist upload -r pypi
 """
 import os
 from os.path import abspath, dirname, join
@@ -28,7 +38,7 @@ except Exception as e:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.95',
+    version='0.96',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),

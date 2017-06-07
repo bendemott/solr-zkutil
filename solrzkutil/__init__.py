@@ -27,6 +27,9 @@ from kazoo.handlers.threading import KazooTimeoutError
 import colorama
 from colorama import Fore, Back, Style
 
+from solrzkutil.util import netcat
+from solrzkutil.parser import parse_admin_dump, parse_admin_cons
+
 __application__ = 'solr-zkutil'
 
 COMMANDS = {
@@ -40,7 +43,8 @@ COMMANDS = {
     'status': ('stat', 'Check ZooKeeper ensemble status'),
     'config': ('config', 'Show connection strings, or set environment configuration'),
     'admin': ('admin', 'Execute a ZooKeeper administrative command'),
-    'ls': ('ls', 'List a ZooKeeper Node')
+    'ls': ('ls', 'List a ZooKeeper Node'),
+    'sessions': ('session-reset', 'Reset ZooKeeper sessions, each client will receive a SESSION EXPIRED notification, and will automatically reconnect.  Solr ephemeral nodes should re-register themselves.'),
 }
 
 CONFIG_DIRNAME = __application__
@@ -261,11 +265,48 @@ def get_leader(zk_hosts):
                 return host
         
         zk.stop()
+        
+    raise RuntimeError('no leader available, from connections given')
+        
+def get_server_by_id(zk_hosts, server_id):
+
+    if not isinstance(server_id, int):
+        raise ValueError('server_id must be int, got: %s' % type(server_id))
+
+    for host in zk_hosts:
+    
+        zk = KazooClient(hosts=host, read_only=True)
+        try:
+            zk.start()
+        except KazooTimeoutError as e:
+            print('ZK Timeout host: [%s], %s' % (host, e))
+            continue
+            
+        properties_str = zk.command(cmd=b'conf')
+        properties = properties_str.split('\n')
+        for line in properties:
+            if not line.strip().lower().startswith('serverid='):
+                continue
+            key, val = line.split('=')
+            val = int(val)
+            if val == server_id:
+                return host
+            continue 
+        
+        zk.stop()
+        
+    raise ValueError("no host available with that server id [%d], from connections given" % server_id)
 
     
-def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
+def parse_zk_hosts(zookeepers, all_hosts=False, leader=False, server_id=None):
     """
     Returns [host1, host2, host3]
+    
+    Default behavior is to return a single host from the list chosen by random (a list of 1)
+    
+    :param all_hsots: if true, all hosts will be returned in a list
+    :param leader: if true, return the ensemble leader host 
+    :param server_id: if provided, return the host with this server id (integer)
     """
     zk_hosts, root = zookeepers.split('/') if len(zookeepers.split('/')) > 1 else (zookeepers, None)
     zk_hosts = zk_hosts.split(',')
@@ -275,17 +316,21 @@ def parse_zk_hosts(zookeepers, all_hosts=False, leader=False):
     
     if leader:
         zk_hosts = [get_leader(zk_hosts)]
-        if not zk_hosts:
-            raise RuntimeError('no leader available, from connections given')
+            
+    elif server_id:
+        zk_hosts = [get_server_by_id(zk_hosts, server_id)]
+            
     # make a list of each host individually, so they can be queried one by one for statistics.
     elif all_hosts:
         zk_hosts = all_hosts_list
+        
     # otherwise pick a single host to query by random.
     else:
         zk_hosts = [choice(zk_hosts) + root]
         
     return zk_hosts
 
+    
 def update_config(configuration=None, add=None):
     """
     Update the environments configuration on-disk.
@@ -430,6 +475,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
         mod_time = pendulum.fromtimestamp(znode_unix_time, timezone)
         mod_time = mod_time.in_timezone(timezone)
         local_time_str = mod_time.to_day_datetime_string()
+        version = str(zstats.version) or str(zstats.cversion)
 
 
         if debug:
@@ -442,7 +488,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
                 print(style_text(attr_name, STATS_STYLE, lpad=4, rjust=dbg_rjust), style_text(attr_val, INPUT_STYLE))
         else:
             print(style_text('Modified:', STATS_STYLE, lpad=2, rjust=9), style_text(local_time_str, INPUT_STYLE))
-            print(style_text('Version:', STATS_STYLE, lpad=2, rjust=9), style_text(str(zstats.version), INPUT_STYLE))
+            print(style_text('Version:', STATS_STYLE, lpad=2, rjust=9), style_text(version, INPUT_STYLE))
         print('')
 
 
@@ -608,26 +654,104 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     for host in zk_hosts:
     
         print('')
-    
-        zk = KazooClient(hosts=host, read_only=True)
-        zk.start()
-        # Kazoo expects an object with the 'buffer' inteface.
+        # use netcat, so we don't modify any transaction values by executing an admin command.
         strcmd = command.encode('utf-8')
-        status = zk.command(cmd=strcmd)
-        zk_ver = '.'.join(map(str, zk.server_version()))
-        zk_host = zk.hosts[zk.last_zxid]
-        zk_host = ':'.join(map(str, zk_host))
-        
-        zk.stop()
-        
+        hostaddr, port = host.split(':')
+        status = netcat(hostaddr, port, strcmd)
+ 
         if len(zk_hosts) == 1:
-            print(style_header('ZK Command [%s] on %s v%s' % (command, zk_host, zk_ver)))
+            print(style_header('ZK Command [%s] on %s' % (command, host)))
         else:
-            print(style_text('ZK Command [%s] on %s v%s' % (command, zk_host, zk_ver), HEADER_STYLE, pad=2))
+            print(style_text('ZK Command [%s] on %s' % (command, host), HEADER_STYLE, pad=2))
 
         print(style_multiline(status, INFO_STYLE, lpad=2))
 
 
+def sessions_reset(zookeepers, server_id=None, ephemeral=False, solr=False):
+    """
+    Reset connections/sessions to Zookeeper.
+    """
+    if server_id:
+        zk_host = parse_zk_hosts(zookeepers, server_id=server_id)[0]
+    else:
+        zk_host = parse_zk_hosts(zookeepers, leader=True)[0]
+   
+    
+    search = []
+    if ephemeral:
+        search += ["ephemeral sessions"]
+    else:
+        search += ["sessions"]
+    if solr:
+        if search:
+            search += ['that are']
+        search += ['solr servers']
+    if server_id:
+        search += ['on serverId: %d (%s)' % (server_id, zk_host)]
+    else:
+        search += ['on all ensemble members']
+        
+    search = ' '.join(search)
+    print(style_header('Resetting %s' % search))
+    '''
+    zk = KazooClient(hosts=zk_host, read_only=True, client_id=session_id)
+    try:
+        zk.start()
+    except KazooTimeoutError as e:
+        print('ZK Timeout host: [%s], %s' % (host, e))
+    '''
+    
+    hostaddr, port = zk_host.split(':')
+    dump = netcat(hostaddr, port, b'dump')
+    cons = netcat(hostaddr, port, b'cons')
+    
+    conn_data = parse_admin_cons(cons)
+    dump_data = parse_admin_dump(dump)
+    
+    from pprint import pprint 
+    
+    #pprint(conn_data)
+    #pprint(dump_data)
+    
+    sessions = []
+    if server_id is not None:
+        sessions = [s['sid'] for s in conn_data]
+    else:
+        sessions = [s['session'] for s in dump_data['sessions']]
+        
+    if ephemeral:
+        sessions = [s for s in sessions if s in dump_data['ephemerals']]
+        
+    for session_id in sessions:
+        # sometimes sessions are listed, that are gone, or invalid or disconnected....
+        # when this happens their session id will be zero, or (null)
+        if not session_id:
+            continue
+        s_style = style_text("%s" % str(session_id), STATS_STYLE)
+        print(style_text("Resetting session: %s" % s_style, INFO_STYLE, lpad=2))
+        
+    
+        zk = None
+        try:
+            zk = KazooClient(hosts=zk_host, read_only=True, client_id=(session_id, b''))
+            zk.start()
+        except KazooTimeoutError as e:
+            print('ZK Timeout host: [%s], %s' % (zk_host, e))
+        except Exception as e:
+            print(style_text("Error Resetting session: %s" % e, ERROR_STYLE, lpad=2))
+            continue
+        finally:
+            if zk:
+                zk.stop()
+        
+    # TODO support --solr option.
+    # TODO support --clients option ?
+    
+    # solr can be identified by its watch on a collection.
+        
+    print('')
+        
+        
 def cli():
     """
     Build the CLI menu
@@ -822,7 +946,19 @@ def cli():
     envs.add_argument('-a',  '--add', default=None, required=False, type=verify_add,
         help=('add/update an environment variable using the syntax KEY=VALUE,\n'
         'eg. DEV=zk01.dev.com:2181,zk02.dev.com:2181'))
-
+        
+    # -- SESSIONS RESET -------------
+    cmd, about = COMMANDS['sessions']
+    session = subparsers.add_parser(cmd, help=about)
+    session.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
+    session.add_argument(*env_argument['args'], **env_argument['kwargs'])
+    session.add_argument('-id',  '--server-id', type=int, default=None, required=False,
+        help='reset connections only for the matched server id, if not specified ALL sessions are reset')
+    session.add_argument('--ephemeral', action='store_true', required=False,
+        help='reset sessions with ephemeral nodes only')
+    session.add_argument('--solr', action='store_true', required=False,
+        help='reset sessions from solr nodes only')
+        
     return parser
 
 
@@ -874,6 +1010,9 @@ def main(argv=None):
 
     elif cmd == COMMANDS['admin'][0]:
         admin_command(zookeepers=args['zookeepers'], command=args['cmd'], all_hosts=args['all_hosts'], leader=args['leader'])
+        
+    elif cmd == COMMANDS['sessions'][0]:
+        sessions_reset(zookeepers=args['zookeepers'], server_id=args['server_id'], ephemeral=args['ephemeral'], solr=args['solr'])
     else:
         parser.print_help()
 
