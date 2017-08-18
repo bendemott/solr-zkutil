@@ -27,7 +27,7 @@ from kazoo.handlers.threading import KazooTimeoutError
 import colorama
 from colorama import Fore, Back, Style
 
-from solrzkutil.util import netcat
+from solrzkutil.util import netcat, text_type
 from solrzkutil.parser import parse_admin_dump, parse_admin_cons
 
 __application__ = 'solr-zkutil'
@@ -218,11 +218,11 @@ def style_text(text, styles, ljust=0, rjust=0, cen=0, lpad=0, rpad=0, pad=0, cha
         return ''
 
     # Ensure we have unicode in both python 2/3
-    text    = six.text_type(text)
-    styles  = six.text_type(styles)
-    char    = six.text_type(char)
-    restore = six.text_type(restore)
-    reset_all = six.text_type(Style.RESET_ALL)
+    text    = text_type(text)
+    styles  = text_type(styles)
+    char    = text_type(char)
+    restore = text_type(restore)
+    reset_all = text_type(Style.RESET_ALL)
     
     style = ''.join(styles)
     text = text.ljust(ljust, char)
@@ -648,7 +648,7 @@ def admin_command(zookeepers, command, all_hosts=False, leader=False):
     """
     Execute an administrative command
     """
-    command = six.text_type(command) # ensure we have unicode py2/py3
+    command = text_type(command) # ensure we have unicode py2/py3
     zk_hosts = parse_zk_hosts(zookeepers, all_hosts=all_hosts, leader=leader)
     
     for host in zk_hosts:
@@ -690,8 +690,7 @@ def sessions_reset(zookeepers, server_id=None, ephemeral=False, solr=False):
         search += ['on serverId: %d (%s)' % (server_id, zk_host)]
     else:
         search += ['on all ensemble members']
-        
-    search = ' '.join(search)
+
     print(style_header('Resetting %s' % search))
     '''
     zk = KazooClient(hosts=zk_host, read_only=True, client_id=session_id)
@@ -721,6 +720,9 @@ def sessions_reset(zookeepers, server_id=None, ephemeral=False, solr=False):
         
     if ephemeral:
         sessions = [s for s in sessions if s in dump_data['ephemerals']]
+        
+    if not sessions:
+        print(style_text("No sessions matching criteria", STATS_STYLE, lpad=2))
         
     for session_id in sessions:
         # sometimes sessions are listed, that are gone, or invalid or disconnected....

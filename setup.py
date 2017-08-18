@@ -26,7 +26,14 @@ if abspath(os.getcwd()) != abspath(dirname(__file__)):
 try:
     from setuptools import setup, find_packages
 except ImportError:
-    from distutils import setup
+    try:
+        from distutils import setup
+    except ImportError:
+        pip = "pip"
+        if sys.version_info >= (3,0):
+            pip = "pip3"
+        sys.stderr.write("setuptools is not installed, you can install with: %s install setuptools\n" % pip)
+        sys.exit(-1)
 
 README_PATH = abspath(join(os.path.dirname(__file__), 'README.rst'))
 try:
@@ -38,7 +45,7 @@ except Exception as e:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.96',
+    version='0.97',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),
