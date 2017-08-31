@@ -8,6 +8,9 @@ from threading import Thread
 import random
 from collections import defaultdict
 import time
+from pprint import pformat
+import logging
+log = logging.getLogger()
 
 import six
 from kazoo.retry import KazooRetry
@@ -30,13 +33,9 @@ def multi_admin_command(zk_client, command):
                        the command against
     :param command: a 
     """
-    if not isinstance(zookeepers, six.string_types):
-        raise ValueError('zookeepers must be a string, got: %s' % type(zookeepers))
-        
     if not isinstance(command, six.binary_type):
         raise ValueError('command must be a byte string got: %s' % type(command))
         
-    zk_hosts = parse_zk_hosts(zookeepers, all_hosts=True)
     admin_results = []
     
     def get_admin(zk_host, zk_port, cmd):
@@ -61,7 +60,7 @@ def znode_path_join(parts):
     
     Can join paths from sequences like::
     
-        ('/path1/path2', 'path')
+        ('/', '/path1/path2', 'path')
         ('path1', 'path2', 'path')
         ('path1', '/path2', '/path')
         
@@ -70,9 +69,9 @@ def znode_path_join(parts):
         /path1/path2/path
     """
     if not len(parts):
-        raise ValueError('empty path')
+        raise ValueError('empty path %s' % parts)
         
-    parts = [p.strip(ZNODE_PATH_SEPARATOR) for p in parts]
+    parts = [p.strip(ZNODE_PATH_SEPARATOR) for p in parts if p.strip(ZNODE_PATH_SEPARATOR).strip()]
     
     # add leading slash
     parts[0] = ZNODE_PATH_SEPARATOR + parts[0]
@@ -115,7 +114,7 @@ def check_ephemeral_dump_consistency(zk_client):
         
     # Find all unique sets of indexes to use for comparisons.
     errors = []
-    comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(ephemerals_compare)), repeat=2) if pair[0] != pair[1]]}
+    comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(ephemerals_compare)), repeat=2) if pair[0] != pair[1]}
     for idx1, idx2 in comparisons:
         # Set comparison to determine differences between the two hosts
         differences = ephemerals_compare[idx1] ^ ephemerals_compare[idx2]
@@ -152,20 +151,27 @@ def get_ephemeral_paths_children_per_host(zk_client):
     ephemeral_znodes = list(itertools.chain.from_iterable(ephemeral_znodes))
     # We assume that all the znodes that are ephemeral from the 'dump' command are files.
     # We then calculate a set of all directories to examine children in.
-    ephemeral_directories = {znode_path_split(znode)[0] for znode in ephemeral_znodes}
+    ephemeral_directories = [] 
+    for znode in ephemeral_znodes:
+        if not znode or znode.strip() == ZNODE_PATH_SEPARATOR:
+            log.warn('a znode returned from `dump` is unexpectedly empty: "%s", the output of dump is: %s' % (znode, dump_output))
+        try:
+            ephemeral_directories.append(znode_path_split(znode)[0])
+        except Exception as e:
+            log.error('exception while getting znode path: "%s", the output of dump is: %s' % (znode, dump_output))
+            continue
+            
+    ephemeral_directories = set(ephemeral_directories)
     ephemeral_children = defaultdict(list)
-    
-    # holds errors that occur during operations
-    errors = []
     
     # holds a mapping of znode path to list of ``kazoo.interfaces.IAsyncResult`` objects
     asyncs = defaultdict(list)
     
     # asynchronously get all children of znodes
-    for zpath in ephemeral_directories:
+    for znode in ephemeral_directories:
         for client in clients:
             # note that 'cb' is a kazoo.interfaces.IAsyncResult
-            cb = client.get_children_async(zpath)
+            cb = client.get_children_async(znode)
             asyncs[znode].append(cb)
     
     # wait for all responses to be ready or timeout or error.
@@ -183,6 +189,8 @@ def get_ephemeral_paths_children_per_host(zk_client):
         for async in cbs:
             if async.exception:
                 ephemeral_children[znode].append(async.exception)
+                log.warn('error during get_children_async() znode: %s, error: %s' % (
+                    znode, async.exception))
             else:
                 children = async.get()
                 # make the children fully qualified paths
@@ -213,6 +221,7 @@ def check_ephemeral_sessions_fast(zk_client):
     conn_data = list(itertools.chain.from_iterable(conn_data))
     # Get a set() of all valid zookeeper sessions as integers
     valid_sessions = {con.get('sid') for con in conn_data if 'sid' in con}
+    log.debug('found %d active sessions across %d ensemble members' % (len(valid_sessions), len(clients)))
     
     errors = []
     asyncs = defaultdict(dict) # maps client_idx to callbacks
@@ -221,6 +230,7 @@ def check_ephemeral_sessions_fast(zk_client):
     # note that 'cb' is a kazoo.interfaces.IAsyncResult
     for znode, children_results in six.viewitems(children):
         for client_idx, children_paths in enumerate(children_results):
+            client = clients[client_idx]
             if isinstance(children_paths, Exception):
                 exception = children_paths
                 # see if this one is an error.
@@ -234,6 +244,7 @@ def check_ephemeral_sessions_fast(zk_client):
                 continue 
             
             for child_path in children_paths:
+                log.debug('host %s queueing async call for get: %s' % (zk_client.hosts[client_idx], child_path))
                 cb = client.get_async(child_path)
                 asyncs[client_idx][child_path] = cb
         
@@ -245,9 +256,8 @@ def check_ephemeral_sessions_fast(zk_client):
         if all(ready):
             break
         
-    # gather results, or errors
+    # detect missing ephemeral sessions
     for client_idx, path_cbs in six.viewitems(asyncs):
-        results = []
         for znode, async in six.viewitems(path_cbs):
             if async.exception:
                 errors.append(
@@ -267,4 +277,9 @@ def check_ephemeral_sessions_fast(zk_client):
                             ephemeral_session
                         )
                     )
-    
+                else:
+                    log.debug('host %s path %s has valid session: %d' % (zk_client.hosts[client_idx], znode, ephemeral_session))
+                    
+    if not errors:
+        log.debug('%s.%s encountered no errors' % (__name__, check_ephemeral_sessions_fast.__name__))
+    return errors

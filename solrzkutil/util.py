@@ -18,7 +18,7 @@ def kazoo_clients_connect(clients, timeout=5):
     param clients: a sequence of KazooClient objects or subclasses of.
     """
     asyncs = []
-    for client in clients
+    for client in clients:
         # returns immediately
         asyncs.append(client.start_async())
 
@@ -105,7 +105,7 @@ def get_server_by_id(zk_hosts, server_id):
         
     raise ValueError("no host available with that server id [%d], from connections given" % server_id)
 
-def zk_conn_from_client(KazooClient):
+def zk_conn_from_client(kazoo_client):
     """
     Make a Zookeeper connection string from a KazooClient instance
     """
@@ -113,7 +113,7 @@ def zk_conn_from_client(KazooClient):
     chroot = kazoo_client.chroot
     return zk_conn_from_hosts(hosts, chroot)
     
-def zk_conns_from_client(KazooClient):
+def zk_conns_from_client(kazoo_client):
     """
     Make a Zookeeper connection string per-host from a KazooClient instance
     """
