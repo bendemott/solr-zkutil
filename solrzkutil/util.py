@@ -3,6 +3,7 @@ from __future__ import print_function
 import socket
 import time
 import six
+import math
 from random import choice 
 
 from kazoo.client import KazooClient
@@ -10,7 +11,49 @@ from kazoo.client import KazooState
 from kazoo.protocol.states import EventType
 from kazoo.handlers.threading import KazooTimeoutError
     
+def kazoo_clients_connect(clients, timeout=5):
+    """
+    Connect the provided Zookeeper client asynchronously.
+    
+    param clients: a sequence of KazooClient objects or subclasses of.
+    """
+    asyncs = []
+    for client in clients
+        # returns immediately
+        asyncs.append(client.start_async())
+
+    tstart = time.time()
+    while True:
+        elapsed = time.time() - tstart
+        remaining = math.ceil(max(0, timeout - elapsed))
+        connecting = [async for idx, async in enumerate(asyncs) if not clients[idx].connected]
+        if not connecting:
+            break
+        if not remaining:
+            raise Exception('Timeout while connecting, exceeded %d secs' % timeout)
+        
+        # Wait the remaining amount of time to connect
+        connecting[0].wait(remaining)
+    
+def kazoo_clients_from_client(kazoo_client):
+    """
+    Construct a series of KazooClient connection objects from a single KazooClient instance
+    
+    A client will be constructed per host within the KazooClient, so if the KazooClient was 
+    constructed with 3 hosts in its connection string, 3 KazooClient instanctes will be returned
+    
+    The class constructed will be the same type as is passed in kazoo_client, this functionality
+    is so that this method will work with mocked connection objects or customized subclasses of
+    KazooClient.
+    """
+    # TODO support acl, and auth, arguments
+    connection_strings = zk_conns_from_client(kazoo_client)
+    cls = kazoo_client.__class__
+    clients = [cls(conn_str) for conn_str in connection_strings]
+    return clients
+    
 def get_leader(zk_hosts):
+    # TODO refactor me to accept KazooClient object.
     for host in zk_hosts:
     
         zk = KazooClient(hosts=host, read_only=True)
@@ -34,7 +77,7 @@ def get_leader(zk_hosts):
     raise RuntimeError('no leader available, from connections given')
         
 def get_server_by_id(zk_hosts, server_id):
-
+    # TODO refactor me to accept KazooClient object.
     if not isinstance(server_id, int):
         raise ValueError('server_id must be int, got: %s' % type(server_id))
 
@@ -62,7 +105,50 @@ def get_server_by_id(zk_hosts, server_id):
         
     raise ValueError("no host available with that server id [%d], from connections given" % server_id)
 
-
+def zk_conn_from_client(KazooClient):
+    """
+    Make a Zookeeper connection string from a KazooClient instance
+    """
+    hosts = kazoo_client.hosts
+    chroot = kazoo_client.chroot
+    return zk_conn_from_hosts(hosts, chroot)
+    
+def zk_conns_from_client(KazooClient):
+    """
+    Make a Zookeeper connection string per-host from a KazooClient instance
+    """
+    hosts = kazoo_client.hosts
+    chroot = kazoo_client.chroot
+    return zk_conns_from_hosts(hosts, chroot)
+    
+def zk_conn_from_hosts(hosts, chroot=None):
+    """
+    Make a Zookeeper connection string from a list of (host,port) tuples.
+    """
+    if chroot and not chroot.startswith('/'):
+        chroot = '/' + chroot
+    return ','.join(['%s:%s' % (host,port) for host, port in hosts]) + chroot or ''
+    
+def zk_conns_from_hosts(hosts, chroot=None):
+    """
+    Make a list of Zookeeper connection strings one her host.
+    """
+    if chroot and not chroot.startswith('/'):
+        chroot = '/' + chroot
+    return ['%s:%s' % (host,port) + chroot or '' for host, port in hosts]
+    
+def parse_zk_conn(zookeepers):
+    """
+    Parse Zookeeper connection string into a list of fully qualified connection strings.
+    """
+    zk_hosts, root = zookeepers.split('/') if len(zookeepers.split('/')) > 1 else (zookeepers, None)
+    zk_hosts = zk_hosts.split(',')
+    root = '/'+root if root else ''
+    
+    all_hosts_list = [h+root for h in zk_hosts]
+    
+    return all_hosts_list
+    
 def parse_zk_hosts(zookeepers, all_hosts=False, leader=False, server_id=None):
     """
     Returns [host1, host2, host3]

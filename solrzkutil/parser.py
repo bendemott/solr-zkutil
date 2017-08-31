@@ -62,7 +62,7 @@ def parse_zxid(text):
 
     return zxid_epoch, zxid_count
 
-def parse_admin_wchc(watch_str):
+def parse_admin_wchc(text):
     """
     Parser zookeeper admin command `wchp`
     
@@ -125,7 +125,7 @@ def parse_admin_wchc(watch_str):
     SESSION_IDENT = '0x'
     session = None
     path = None
-    for line in watch_str.split("\n"):
+    for line in text.split("\n"):
     
         line = line.strip()
         
@@ -146,7 +146,7 @@ def parse_admin_wchc(watch_str):
         
     return data
     
-def parse_admin_wchp(watch_str):
+def parse_admin_wchp(text):
     """
     Parser zookeeper admin command `wchp`
     
@@ -226,7 +226,7 @@ def parse_admin_wchp(watch_str):
     SESSION_IDENT = '0x'
     session = None
     path = None
-    for line in watch_str.split("\n"):
+    for line in text.split("\n"):
     
         line = line.strip()
         
@@ -247,11 +247,11 @@ def parse_admin_wchp(watch_str):
         
     return data
         
-def parse_admin_cons(cons_str):
+def parse_admin_cons(text):
     """
     Parse zookeeper admin command 'cons' output into a data structure.
 
-    Cons returns connection information for a particular server.
+    `cons` returns connection information for a particular server.
 
     sid is the session id
     lop is the last operation performed by the client
@@ -275,7 +275,8 @@ def parse_admin_cons(cons_str):
       /10.50.66.190:40744[1](queued=0,recved=1752,sent=1762,sid=0x35b643799ab344e,lop=PING,est=149677443
       
       
-    Outputs:
+    Outputs::
+    
         [{'avglat': 0,
           'client': ['10.51.65.171', '41322'],
           'connections': 1,
@@ -297,7 +298,7 @@ def parse_admin_cons(cons_str):
           {...}]
     """
     data = []
-    for line in cons_str.split("\n"):
+    for line in text.split("\n"):
         entry = {
             'client': None,
             'connections': 0,
@@ -368,7 +369,7 @@ def parse_admin_cons(cons_str):
 
 def parse_admin_dump(text):
     """
-    Example Output::
+    Example Input::
 
           SessionTracker dump:
           Session Sets (13):
@@ -421,7 +422,7 @@ def parse_admin_dump(text):
                 /live_nodes/10.50.65.133:8983_solr
                 /overseer_
 
-    Outputs:
+    Outputs::
     
         {'ephemerals': {170105861950612946L: ['/collections/efc-profiles-col/leaders/shard1/leader',
                                               '/collections/efc-profiles-match-col/leader_elect/shard1/election/170105861950612946-core_node10-n_0000000230',

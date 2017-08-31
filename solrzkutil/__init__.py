@@ -378,7 +378,7 @@ def show_node(zookeepers, node, all_hosts=False, leader=False, debug=False, inte
             
         # Query ZooKeeper for the node.
         content, zstats = zk.get(node)
-        #  print(dir(zstats))
+        # print(dir(zstats))
         # print(getattr(zstats, 'czxid'))
         
         # --- Print Node Stats -------------------------
