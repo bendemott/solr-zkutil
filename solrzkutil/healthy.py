@@ -15,7 +15,7 @@ log = logging.getLogger()
 import six
 from kazoo.retry import KazooRetry
 
-from solrzkutil.parser import parse_admin_dump, parse_admin_cons
+from solrzkutil.parser import parse_admin_dump, parse_admin_cons, parse_admin_wchp
 from solrzkutil.util import netcat, parse_zk_hosts, kazoo_clients_from_client, kazoo_clients_connect
 
 from pprint import pprint 
@@ -123,6 +123,40 @@ def check_ephemeral_dump_consistency(zk_client):
                 'ephemeral nodes do not match for host:{host1} and host:{host2}... differences: {diff}'.format(
                     host1=zk_hosts[idx1],
                     host2=zk_hosts[idx2],
+                    diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
+                )
+            )
+    return errors
+
+def check_session_file_watches(zk_client):
+    zk_hosts = zk_client.hosts
+    wchp_results = multi_admin_command(zk_client, b'wchp')
+    wchp_clusterprops_wchs = [parse_admin_wchp(item)[u'/clusterprops.json'] for item in wchp_results]
+    wchp_clusterstate_wchs = [parse_admin_wchp(item)[u'/clusterstate.json'] for item in wchp_results]
+    wchp_aliases_wchs = [parse_admin_wchp(item)[u'/aliases.json'] for item in wchp_results]
+
+    file_watches_compare = []
+    # TODO: Remove Test Code
+    # x = list(set(wchp_clusterprops_wchs[0]))
+    # x.append(1234)
+    # print(x)
+    # file_watches_compare.append(["clusterprops.json", set(x)])
+    file_watches_compare.append(["clusterprops.json", set(list(set(wchp_clusterprops_wchs[0])))])
+    file_watches_compare.append(["clusterstate.json", set(list(set(wchp_clusterstate_wchs[0])))])
+    file_watches_compare.append(["aliases.json", set(list(set(wchp_aliases_wchs[0])))])
+
+    # log.info("file watches: %s" % (file_watches_compare))
+
+    comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(file_watches_compare)), repeat=2) if pair[0] != pair[1]}
+
+    errors = []
+    for idx1, idx2 in comparisons:
+        differences = file_watches_compare[idx1][1] ^ file_watches_compare[idx2][1]
+        if differences:
+            errors.append(
+                'sessions watches do not match files:{file1} and {file2}... differences: {diff}'.format(
+                    file1=file_watches_compare[idx1][0],
+                    file2=file_watches_compare[idx2][0],
                     diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
                 )
             )
