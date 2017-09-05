@@ -5,17 +5,74 @@ import time
 import six
 import math
 from random import choice 
+import logging
 
 from kazoo.client import KazooClient
 from kazoo.client import KazooState
 from kazoo.protocol.states import EventType
 from kazoo.handlers.threading import KazooTimeoutError
+from kazoo.exceptions import OperationTimeoutError
+
+log = logging.getLogger(__name__)
+
+CONNECTION_CACHE_ENABLED = True
+CONNECTION_CACHE = {}
+def kazoo_client_cache_enable(enable):
+    """
+    You may disable or enable the connection cache using this function.
+    The connection cache reuses a connection object when the same connection parameters
+    are encountered that have been used previously.  Because of the design of parts of this program
+    functionality needs to be independent and uncoupled, which means it needs to establish its own
+    connections.
+    Connections to Zookeeper are the most time consuming part of most interactions so caching
+    connections enables much faster running of tests health checks, etc.
+    """
+    global CONNECTION_CACHE_ENABLED
+    CONNECTION_CACHE_ENABLED = enable
     
-def kazoo_clients_connect(clients, timeout=5):
+
+def kazoo_client_cache_serialize_args(kwargs):
+    '''
+    Returns a hashable object from keyword arguments dictionary.
+    This hashable object can be used as the key in another dictionary.
+    
+    :param kwargs: a dictionary of connection parameters passed to KazooClient 
+    
+    Supported connection parameters::
+    
+        hosts - Comma-separated list of hosts to connect to (e.g. 127.0.0.1:2181,127.0.0.1:2182,[::1]:2183).
+        timeout - The longest to wait for a Zookeeper connection.
+        client_id - A Zookeeper client id, used when re-establishing a prior session connection.
+        handler - An instance of a class implementing the IHandler interface for callback handling.
+        default_acl - A default ACL used on node creation.
+        auth_data - A list of authentication credentials to use for the connection. 
+                    Should be a list of (scheme, credential) tuples as add_auth() takes.
+        read_only - Allow connections to read only servers.
+        randomize_hosts - By default randomize host selection.
+        connection_retry - A kazoo.retry.KazooRetry object to use for retrying the connection to 
+                           Zookeeper. Also can be a dict of options which will be used for creating one.
+        command_retry - A kazoo.retry.KazooRetry object to use for the KazooClient.retry() method. 
+                        Also can be a dict of options which will be used for creating one.
+        logger - A custom logger to use instead of the module global log instance.
+    '''
+    return frozenset(kwargs.items())
+
+def kazoo_client_cache_get(kwargs):
+    if CONNECTION_CACHE_ENABLED:
+        return CONNECTION_CACHE.get(kazoo_client_cache_serialize_args(kwargs))
+    
+def kazoo_client_cache_put(kwargs, client):
+    global CONNECTION_CACHE
+    CONNECTION_CACHE[kazoo_client_cache_serialize_args(kwargs)] = client
+
+def kazoo_clients_connect(clients, timeout=5, continue_on_error=False):
     """
     Connect the provided Zookeeper client asynchronously.
+    This is the fastest way to connect multiple clients while respecting a timeout.
     
-    param clients: a sequence of KazooClient objects or subclasses of.
+    :param clients: a sequence of KazooClient objects or subclasses of.
+    :param timeout: connection timeout in seconds
+    :param continue_on_error: don't raise exception if SOME of the hosts were able to connect
     """
     asyncs = []
     for client in clients:
@@ -27,12 +84,37 @@ def kazoo_clients_connect(clients, timeout=5):
         elapsed = time.time() - tstart
         remaining = math.ceil(max(0, timeout - elapsed))
         connecting = [async for idx, async in enumerate(asyncs) if not clients[idx].connected]
+        connected_ct = len(clients) - len(connecting)
         if not connecting:
-            break
+            # successful - all hosts connected
+            return connected_ct
         if not remaining:
-            raise Exception('Timeout while connecting, exceeded %d secs' % timeout)
+            # stop connection attempt for any client that timed out.
+            for client in clients:
+                if client.connected:
+                    continue
+                else:
+                    client.stop()
+                    
+            if len(connecting) < len(clients):
+                # if some of the clients connected, return the ones that are connected
+                msg = 'Connection Timeout - %d of %d clients timed out after %d seconds' % (
+                    len(connecting),
+                    len(clients),
+                    timeout
+                )
+                if continue_on_error:
+                    log.warn(msg)
+                    return connected_ct
+                else:
+                    OperationTimeoutError(msg)
+                
+                
+            raise OperationTimeoutError('All hosts timed out after %d secs' % timeout)
         
         # Wait the remaining amount of time to connect
+        # note that this will wait UP TO remaining, but will only wait as long as it takes
+        # to connect.
         connecting[0].wait(remaining)
     
 def kazoo_clients_from_client(kazoo_client):
@@ -46,10 +128,18 @@ def kazoo_clients_from_client(kazoo_client):
     is so that this method will work with mocked connection objects or customized subclasses of
     KazooClient.
     """
-    # TODO support acl, and auth, arguments
+    # TODO support all connection arguments
     connection_strings = zk_conns_from_client(kazoo_client)
     cls = kazoo_client.__class__
-    clients = [cls(conn_str) for conn_str in connection_strings]
+    clients = []
+    for conn_str in connection_strings:
+        args =  {'hosts': conn_str}
+        client = kazoo_client_cache_get(args)
+        if not client:
+            client = cls(**args)
+            kazoo_client_cache_put(args, client)
+        clients.append(client)
+            
     return clients
     
 def get_leader(zk_hosts):
@@ -201,14 +291,16 @@ def netcat(hostname, port, content, timeout=5):
     Operate similary to netcat command in linux (nc).
     """
     # SOCK_DGRAM = UDP 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((hostname, int(port)))
-    sock.settimeout(timeout)
+
  
     # send the request
     content = six.binary_type(content)
     try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect((hostname, int(port)))
+        sock.settimeout(timeout)
         sock.sendall(content)
+        sock.shutdown(socket.SHUT_WR)
     except socket.timeout as e:
         raise IOError("connect timeout: %s calling [%s] on [%s]" % (e, content, hostname))
     except socket.error as e: # subclass of IOError
@@ -216,9 +308,9 @@ def netcat(hostname, port, content, timeout=5):
  
     response = ''
     started = time.time()
-    while 1:
+    while True:
         if time.time() - started >= timeout:
-            raise IOError("timedout retrieving data from: %s" % hostname)
+            raise IOError("timed out retrieving data from: %s" % hostname)
         # receive the response
         try:
             # blocks until there is data on the socket

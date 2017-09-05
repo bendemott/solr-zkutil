@@ -226,7 +226,7 @@ def parse_admin_wchp(text):
     SESSION_IDENT = '0x'
     session = None
     path = None
-    for line in text.split("\n"):
+    for line in text.splitlines():
     
         line = line.strip()
         
@@ -298,7 +298,7 @@ def parse_admin_cons(text):
           {...}]
     """
     data = []
-    for line in text.split("\n"):
+    for line in text.splitlines():
         entry = {
             'client': None,
             'connections': 0,
@@ -476,7 +476,7 @@ def parse_admin_dump(text):
         SESSIONS: [],
         EPHEMERALS: {},
     }
-    for line in text.split('\n'):
+    for line in text.splitlines():
         if 'sessiontracker dump' in line.lower():
             mode = SESSIONS
         elif 'ephemeral nodes dump' in line.lower():
