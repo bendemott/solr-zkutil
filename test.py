@@ -14,7 +14,8 @@ kazoo_log = logging.getLogger('kazoo.client')
 kazoo_log.setLevel(logging.WARN)
 log.setLevel(logging.INFO)
 
-c = KazooClient('zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181')
+zookeepers = 'zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181'
+c = KazooClient(zookeepers)
 print("ZK HOSTS: ", c.hosts)
 
 def test_check_ephemeral_session():
@@ -30,9 +31,7 @@ def test_check_ephemeral_dump_consistency():
         log.info('"check_ephemeral_dump_consistency" returned success!')
 
 def test_check_session_file_watches():
-    zk1 = KazooClient('zk01.dev.gigdev.dhiaws.com:2181')
-    print("ZK HOST: ", zk1.hosts)
-    response = check_session_file_watches(zk1)
+    response = check_session_file_watches(zookeepers)
     pprint(response)
     if not response:
         log.info('"check_session_file_watches" returned success!')
