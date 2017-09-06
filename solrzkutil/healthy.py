@@ -559,8 +559,15 @@ def check_ephemeral_sessions_fast(zk_client):
     for path, host_results in six.viewitems(znode_results):
         for host_idx, result in six.viewitems(host_results):
             if isinstance(result, Exception):
+                exception = result
+                # see if this one is an error.
                 errors.append(
-                    "error from host: %s, path: %s, error: %s" % (zk_client.hosts[host_idx], path, str(result))
+                    "error from host: %s, path: %s, error: (%s) %s" % (
+                        zk_client.hosts[host_idx],
+                        path,
+                        exception.__class__.__name__,
+                        str(exception)
+                    )
                 )
             else:
                 content, stats = result
