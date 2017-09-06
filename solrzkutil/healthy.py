@@ -135,50 +135,110 @@ def check_ephemeral_dump_consistency(zk_client):
             
     return errors
 
-def check_session_file_watches(zookeepers):
+def check_watch_sessions_clients(zk_client):
+    """
+    Check watch consistency for client-related files, exclude solr hosts from these tests.
+    """
+    CLIENT_WATCHES = ('/clusterprops.json', '/clusterstate.json', '/aliases.json')
+    solr_sessions = get_solr_session_ids(zk_client)
+    return check_watch_session_consistency(zk_client, CLIENT_WATCHES, exclude=solr_sessions)
+    
+def check_watch_sessions_solr(zk_client):
+    """
+    Check watch consistency for solr sessions only.
+    """
+    # TODO, in order to verify this you need to know quite a bit of information about collections,
+    # active config sets, etc.
+    
+def check_watch_presence(zk_client, sessions, watch_paths):
+    """
+    Verify that watches exist on all the paths defined for the sessions defined.
+    """
+    
+def check_watch_session_consistency(zk_client, watch_paths, exclude=None, include=None):
+    """
+    Verify watches on the given files are consistent.
+    
+    This function finds situations where a client is watching perhaps 2 files, when it should be
+    watching 3.  One of its watches has died or timed out.
+    
+    :param watch_paths: A list of fully qualified znode paths that should have consistent 
+                        watch sessions across them.
+    
+    Should have a consistent set of watches across servers.
+    """
+    #WATCH_FILES = ('/clusterprops.json', '/clusterstate.json', '/aliases.json')
+    
+    '''
+    wchp_result_data will be a dictionary, where each top-level key corresponds to
+    a znode, and each value is a dictionary, where the indexes are the Zookeeper hosts indexes
+    as defined in zk_client.hosts, and the value is the list of session ids for that host, for that 
+    znode.
+    
+    Example::
+        
+        {
+            '/clusterprops.json': {
+                host-idx-1: [session-1, session-2, session-3],
+                host-idx-2: [session-1, session-2, session-3]
+            },
+            '/aliases.json': {
+               host-idx-1: [session-4, session-5, session-6],
+               host-idx-2: [session-4, session-5, session-6]
+            }
+        }
+    '''
+    errors = []
+    zk_hosts = zk_client.hosts
+    wchp_results = multi_admin_command(zk_client, b'wchp')
+    wchp_result_parsed = [parse_admin_wchp(result) for result in wchp_results]
+    wchp_result_data = defaultdict(dict)
+    for path in watch_paths:
+        for host_idx in range(len(zk_hosts)):
+            if not wchp_result_parsed[host_idx]:
+                wchp_result_data[path][host_idx] = []
+            else:
+                sessions = set(wchp_result_parsed[host_idx].get(path, []))
+                if exclude:
+                    sessions = sessions - set(exclude)
+                if include:
+                    sessions = sessions & set(include)
+                wchp_result_data[path][host_idx] = sessions
 
-    def check_file_watches(zk_client):
-        wchp_results = multi_admin_command(zk_client, b'wchp')
-        wchp_clusterprops_wchs = [parse_admin_wchp(item)[u'/clusterprops.json'] for item in wchp_results]
-        wchp_clusterstate_wchs = [parse_admin_wchp(item)[u'/clusterstate.json'] for item in wchp_results]
-        wchp_aliases_wchs = [parse_admin_wchp(item)[u'/aliases.json'] for item in wchp_results]
-
-        file_watches_compare = []
-        # TODO: Remove Test Code
-        # x = list(set(wchp_clusterprops_wchs[0]))
-        # x.append(1234)
-        # file_watches_compare.append(["clusterprops.json", set(x)])
-
-        file_watches_compare.append(["clusterprops.json", set(list(set(wchp_clusterprops_wchs[0])))])
-        file_watches_compare.append(["clusterstate.json", set(list(set(wchp_clusterstate_wchs[0])))])
-        file_watches_compare.append(["aliases.json", set(list(set(wchp_aliases_wchs[0])))])
-
-        # log.info("file watches: %s" % (file_watches_compare))
-
-        comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(file_watches_compare)), repeat=2) if pair[0] != pair[1]}
-
-        errors = []
+                
+    # Check to see if any of the znodes has NO watches across all servers.
+    for path, host_sessions in six.viewitems(wchp_result_data):
+        # combine all the individual zookeeper hosts results, if this list is empty 
+        # then no sessions were returned for this path.
+        sessions = itertools.chain.from_iterable(host_sessions.values())
+        if not sessions:
+            errors.append(
+                "no watches exist for znode: %s on %d zookeeper hosts checked" % (path, len(zk_hosts))
+            )
+    
+    # Find comparison sets, the indexes will be indexes of `watch_paths`
+    comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(watch_paths)), repeat=2) if pair[0] != pair[1]}
+    
+    # Check to ensure each znode contains the same set of session watches.
+    for host_idx in range(len(zk_hosts)):
         for idx1, idx2 in comparisons:
-            differences = file_watches_compare[idx1][1] ^ file_watches_compare[idx2][1]
+            path1 = watch_paths[idx1]
+            path2 = watch_paths[idx2]
+            differences = wchp_result_data[path1][host_idx] ^ wchp_result_data[path2][host_idx]
             if differences:
                 errors.append(
-                    '{zk_host} sessions watches do not match files:{file1} and {file2}... differences: {diff}'.format(
-                        zk_host = zk_client.hosts,
-                        file1=file_watches_compare[idx1][0],
-                        file2=file_watches_compare[idx2][0],
+                    '{zk_host} sessions watches do not match across files:{file1} and {file2}... differences: {diff}'.format(
+                        zk_host = zk_hosts[host_idx],
+                        file1=path1,
+                        file2=path2,
                         diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
                     )
                 )
+    
+    if not errors:
+        log.debug('%s.%s encountered no errors' % (__name__, check_watch_session_consistency.__name__))
 
-        return errors
-
-    all_errors = []
-
-    for zk in zookeepers.split(','):
-        zk_client = KazooClient(zk)
-        all_errors.append(check_file_watches(zk_client))
-
-    return all_errors
+    return errors
 
 def check_zookeeper_connectivity(zk_client, min_timeout=2):
     """
@@ -336,6 +396,7 @@ def get_ephemeral_paths_children_per_host(zk_client):
     results = get_async_call_per_host(zk_client, ephemeral_directories, call)
     
     return results
+    
     
 def get_async_call_per_host_errors(zk_client, async_result):
     """
