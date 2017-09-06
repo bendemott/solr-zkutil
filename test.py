@@ -54,10 +54,7 @@ def test_get_solr_session_ids():
     if response:
         log.info('"test_get_solr_session_ids" returned success!')
         
-
 def test_check_watch_session_consistency():
-    WATCHES = ('/clusterprops.json', '/clusterstate.json', '/aliases.json')
-    #response = check_watch_session_consistency(c, WATCHES)
     response = check_watch_sessions_clients(c)
     pprint(response)
     if not response:
