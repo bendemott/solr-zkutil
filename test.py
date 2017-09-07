@@ -31,7 +31,7 @@ def test_check_zookeeper_connectivity():
     if not response:
         log.info('"check_zookeeper_connectivity" returned success!')
         
-def test_check_ephemeral_session():
+def test_check_ephemeral_session_fast():
     response = check_ephemeral_sessions_fast(c)
     pprint(response)
     if not response:
@@ -69,10 +69,9 @@ def test_check_watch_session_clients():
 
 def main(argv=None):
     test_check_zookeeper_connectivity()
-    test_check_ephemeral_session()
+    test_check_ephemeral_session_fast()
     test_check_ephemeral_znode_consistency()
     test_check_ephemeral_dump_consistency()
-    test_check_ephemeral_session()
     test_get_solr_session_ids()
     test_check_watch_session_clients()
     test_check_watch_sessions_duplicate()

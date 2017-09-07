@@ -314,7 +314,7 @@ def check_watch_session_consistency(zk_client, watch_paths, exclude=None, includ
         for idx1, idx2 in comparisons:
             path1 = watch_paths[idx1]
             path2 = watch_paths[idx2]
-            differences = wchp_result_data[path1][host_idx] ^ wchp_result_data[path2][host_idx]
+            differences = set(wchp_result_data[path1][host_idx]) ^ set(wchp_result_data[path2][host_idx])
             if differences:
                 errors.append(
                     '{zk_host} sessions watches do not match across files:{file1} and {file2}... differences: {diff}'.format(
@@ -508,9 +508,10 @@ def get_async_call_per_host_errors(zk_client, async_result):
                 exception = result
                 # see if this one is an error.
                 errors.append(
-                    "error from host: %s for input: [%s], error: %s" % (
+                    "error from host: %s for input: [%s], error: (%s) %s" % (
                         hosts[client_idx],
                         arg,
+                        exception.__class__.__name__,
                         str(exception)
                     )
                 )
@@ -662,8 +663,15 @@ def check_ephemeral_sessions_fast(zk_client):
     for path, host_results in six.viewitems(znode_results):
         for host_idx, result in six.viewitems(host_results):
             if isinstance(result, Exception):
+                exception = result
+                # see if this one is an error.
                 errors.append(
-                    "error from host: %s, path: %s, error: %s" % (zk_client.hosts[host_idx], path, str(result))
+                    "error from host: %s, path: %s, error: (%s) %s" % (
+                        zk_client.hosts[host_idx],
+                        path,
+                        exception.__class__.__name__,
+                        str(exception)
+                    )
                 )
             else:
                 content, stats = result
@@ -715,7 +723,8 @@ def get_solr_session_ids(zk_client):
     
     errors.extend(get_async_call_per_host_errors(zk_client, live_results))
     
-    live_node_sessions = [[getattr(stats, 'ephemeralOwner', None) for content, stats in live_node.values()] for live_node in live_results.values()]
+    live_node_sessions = [[getattr(content_stats[1], 'ephemeralOwner', None) for content_stats in live_node.values() if not isinstance(content_stats, Exception)] 
+                            for live_node in live_results.values()]
     live_node_sessions = sorted(set(itertools.chain.from_iterable(live_node_sessions)))
     live_node_sessions = [session_id for session_id in live_node_sessions if session_id is not None]
     
