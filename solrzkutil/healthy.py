@@ -16,10 +16,17 @@ import six
 from kazoo.retry import KazooRetry
 from kazoo.client import KazooClient
 
-from solrzkutil.parser import parse_admin_dump, parse_admin_cons, parse_admin_wchp
-from solrzkutil.util import netcat, parse_zk_hosts, kazoo_clients_from_client, kazoo_clients_connect, kazoo_client_cache_enable
+from solrzkutil.parser import (parse_admin_dump, 
+                               parse_admin_cons, 
+                               parse_admin_wchp, 
+                               parse_admin_wchc)
+from solrzkutil.util import (netcat, 
+                             parse_zk_hosts, 
+                             kazoo_clients_from_client, 
+                             kazoo_clients_connect, 
+                             kazoo_client_cache_enable)
 
-from pprint import pprint 
+from pprint import pprint
 ZNODE_PATH_SEPARATOR = '/'
 
 def multi_admin_command(zk_client, command):
@@ -30,10 +37,14 @@ def multi_admin_command(zk_client, command):
     Using threading not only speeds up the total time taken to query the remote Zookeeper hosts, 
     it also ensures the most similar and real-time results from the servers.
     
-    :param zookeepers: a zookeeper connection string, containing all nodes you wish to execute 
-                       the command against
-    :param command: a 
+    :param zk_client: Zookeeper connection object (KazooClient instance or subclass of)
+                           The connection instance should be configured with the hosts that are
+                           members of the ensemble.
+    :param command: the administrative command to execute on each host within ``zk_client.hosts``
     """
+    # TODO handle exceptions from the client, exceptions should 
+    #   return None or the Exception object. 
+    
     if not isinstance(command, six.binary_type):
         raise ValueError('command must be a byte string got: %s' % type(command))
         
@@ -83,7 +94,7 @@ def znode_path_split(path):
     """
     Given an absolute znode path returns a tuple (directory, filename)
     
-    Note that you should/cannot use path functions in Python to parse znode paths as they will not
+    Note that you should-not/cannot use path functions in Python to parse znode paths as they will not
     work cross-platform (Windows).
     """
     if not path.startswith(ZNODE_PATH_SEPARATOR):
@@ -117,7 +128,7 @@ def check_ephemeral_dump_consistency(zk_client):
         
     # Find all unique sets of indexes to use for comparisons.
     errors = []
-    comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(ephemerals_compare)), repeat=2) if pair[0] != pair[1]}
+    comparisons = {tuple(sorted(pair)) for pair in itertools.product(range(len(ephemerals_compare)), repeat=2) if pair[0] != pair[1]}
     for idx1, idx2 in comparisons:
         # Set comparison to determine differences between the two hosts
         differences = ephemerals_compare[idx1] ^ ephemerals_compare[idx2]
@@ -150,10 +161,87 @@ def check_watch_sessions_solr(zk_client):
     # TODO, in order to verify this you need to know quite a bit of information about collections,
     # active config sets, etc.
     
-def check_watch_presence(zk_client, sessions, watch_paths):
+def check_watch_sessions_valid(zk_client):
+    """
+    Ensure all watch sessions have a valid connection associated with them.
+    """
+    # TODO finish me
+    errors = []
+    zk_hosts = zk_client.hosts
+    wchc_results = multi_admin_command(zk_client, b'wchc')
+    wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
+    
+
+def check_watch_sessions_duplicate(zk_client):
+    """
+    Ensure no watch session id is represented on more than one server
+    This shouldn't happen, and if it does it indicates a hung or invalid watch, which means a session was
+    reconnected / reused it chose a different Zookeeper host and the old watch never was cleared.
+    Restart the Zookeeper host with the 
+
+    We will use the ``wchc`` administrative command to get watches by session-id for this check.
+    """
+    # TODO finish me
+    errors = []
+    zk_hosts = zk_client.hosts
+    wchc_results = multi_admin_command(zk_client, b'wchc')
+    wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
+
+    from pprint import pprint
+    pprint(wchc_result_parsed)
+    
+    #session_watches = {}
+    #for host_idx, wchc in enumerate(wchc_result_parsed):
+
+
+    # First thing to check, do any of the hosts share the same session, this would be a problem.
+    comparisons = {tuple(sorted(pair)) for pair in itertools.product(range(len(zk_hosts)), repeat=2) if pair[0] != pair[1]}
+    for idx1, idx2 in comparisons:
+        # Set comparison to determine differences between the two hosts
+        differences = set(wchc_result_parsed[0].keys()) ^ set(wchc_result_parsed[1].keys())
+        if not differences:
+            log.debug('host:{host1} and host:{host2} have {watch1ct} and {watch2ct} watches, and no duplicates.'.format(
+                host1=zk_hosts[idx1],
+                host2=zk_hosts[idx2],
+                watch1ct=len(wchc_result_parsed[idx1].keys()),
+                watch2ct=len(wchc_result_parsed[idx2].keys())
+            ))
+            continue
+            
+        errors.append(
+            'duplicate sessions are present on watches for host:{host1} and host:{host2}... duplicates: {diff}'.format(
+                host1=zk_hosts[idx1],
+                host2=zk_hosts[idx2],
+                diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
+            )
+        )
+
+    return errors
+    
+def check_watch_sessions_present(zk_client, sessions, watch_paths):
     """
     Verify that watches exist on all the paths defined for the sessions defined.
+    This function will assume you expect exactly 1 watch to exist per session defined.
+
+    For any path in ``watch_paths`` one of the sessions in ``sessions`` must be watching it
+    or we have an error.
+    
+    Note that watches can exist on any Zookeeper server, so we have to check all of the servers
+    for watches.
+    
+    We will use the ``wchc`` administrative command to get watches by session-id for this check.
     """
+    # TODO finish me
+    errors = []
+    zk_hosts = zk_client.hosts
+    wchc_results = multi_admin_command(zk_client, b'wchc')
+    wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
+    
+    # combine / merge all of the sessiosns
+    session_watches = {}
+    for wchc in wchc_result_parsed:
+        session_watches.update(wchc)
+    
     
 def check_watch_session_consistency(zk_client, watch_paths, exclude=None, include=None):
     """
@@ -162,12 +250,14 @@ def check_watch_session_consistency(zk_client, watch_paths, exclude=None, includ
     This function finds situations where a client is watching perhaps 2 files, when it should be
     watching 3.  One of its watches has died or timed out.
     
+    :param include: include ONLY these session ids in the check.
+    :param exclude: exclude these session ids from the check, useful to exclude yourself, or client
+                    other client sessions.
     :param watch_paths: A list of fully qualified znode paths that should have consistent 
                         watch sessions across them.
     
     Should have a consistent set of watches across servers.
     """
-    #WATCH_FILES = ('/clusterprops.json', '/clusterstate.json', '/aliases.json')
     
     '''
     wchp_result_data will be a dictionary, where each top-level key corresponds to
@@ -217,7 +307,7 @@ def check_watch_session_consistency(zk_client, watch_paths, exclude=None, includ
             )
     
     # Find comparison sets, the indexes will be indexes of `watch_paths`
-    comparisons = {tuple(sorted(pair, key=str)) for pair in itertools.product(range(len(watch_paths)), repeat=2) if pair[0] != pair[1]}
+    comparisons = {tuple(sorted(pair)) for pair in itertools.product(range(len(watch_paths)), repeat=2) if pair[0] != pair[1]}
     
     # Check to ensure each znode contains the same set of session watches.
     for host_idx in range(len(zk_hosts)):
@@ -401,6 +491,13 @@ def get_ephemeral_paths_children_per_host(zk_client):
 def get_async_call_per_host_errors(zk_client, async_result):
     """
     Return a list of errors contained within the response of ephemeral_children
+    
+    :param zk_client: Zookeeper connection object (KazooClient instance or subclass of)
+                           start() will be called internally when the connection is used.
+                           The connection instance should be configured with the hosts that are
+                           members of the ensemble.
+                           
+    :param async_result: The response from ``get_async_call_per_host()``
     """
     hosts = zk_client.hosts
     # note that 'cb' is a kazoo.interfaces.IAsyncResult
@@ -417,13 +514,15 @@ def get_async_call_per_host_errors(zk_client, async_result):
                         str(exception)
                     )
                 )
-                continue 
+                continue
                 
     return errors
     
 def get_ephemeral_paths_children_per_host_paths(ephemeral_children):
     """
     Get a simple list of unique paths returned by ``get_ephemeral_paths_children_per_host``
+    
+    :param ephemeral_children: A sequence of absolute paths.
     """
     paths = set()
 
@@ -440,6 +539,11 @@ def check_ephemeral_znode_consistency(zk_client):
     """
     For all ephemeral znodes check to ensure their directories are consistent across hosts,
     as well as the content of each node, and their ephemral session / owner.
+    
+    :param zk_client: Zookeeper connection object (KazooClient instance or subclass of)
+                           start() will be called internally when the connection is used.
+                           The connection instance should be configured with the hosts that are
+                           members of the ensemble.
     """
     # Connect to each Zookeeper Host
     zk_hosts = zk_client.hosts
@@ -629,10 +733,11 @@ def check_solr_live_nodes(zk_client):
     
     If a collection/replica refers to a node not in the live-nodes list, then thats a problem.
     """
+    # TODO finish me
     def call(client, znode):
         return client.get_children_async(znode)
         
-    children_results = get_async_call_per_host(zk_client, ['/live_nodes'], call)
+    children_results = get_async_call_per_host(zk_client, [LIVE_NODES_PATH], call)
     
     errors = []
     if not children_results:

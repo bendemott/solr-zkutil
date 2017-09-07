@@ -11,6 +11,7 @@ from solrzkutil.healthy import (check_ephemeral_sessions_fast,
                                 check_zookeeper_connectivity, 
                                 check_ephemeral_znode_consistency,
                                 get_solr_session_ids,
+                                check_watch_sessions_duplicate,
                                 check_watch_session_consistency,
                                 check_watch_sessions_clients)
 
@@ -53,15 +54,18 @@ def test_get_solr_session_ids():
     pprint(response)
     if response:
         log.info('"test_get_solr_session_ids" returned success!')
-        
 
-def test_check_watch_session_consistency():
-    WATCHES = ('/clusterprops.json', '/clusterstate.json', '/aliases.json')
-    #response = check_watch_session_consistency(c, WATCHES)
+def test_check_watch_sessions_duplicate():
+    response = check_watch_sessions_duplicate(c)
+    pprint(response)
+    if not response:
+        log.info('"check_watch_sessions_duplicate" returned success!')
+
+def test_check_watch_session_clients():
     response = check_watch_sessions_clients(c)
     pprint(response)
     if not response:
-        log.info('"check_watch_session_consistency" returned success!')
+        log.info('"check_watch_session_clients" returned success!')
 
 def main(argv=None):
     test_check_zookeeper_connectivity()
@@ -70,7 +74,8 @@ def main(argv=None):
     test_check_ephemeral_dump_consistency()
     test_check_ephemeral_session()
     test_get_solr_session_ids()
-    test_check_watch_session_consistency()
+    test_check_watch_session_clients()
+    test_check_watch_sessions_duplicate()
     
 if __name__ == '__main__':
     sys.exit(main())
