@@ -785,3 +785,21 @@ def check_queue_sizes(zk_client):
     For the most part queues should be empty.  If they contain more than a given number of 
     entries, return information.
     """
+
+def check_complex(zk_client):
+    """
+    This function does several complex checks: 
+        * Checks zookeeper connectivity.
+        * Checks ephemeral nodes.
+        * Checks watches.
+    """
+    errors = []
+    errors.extend(check_zookeeper_connectivity(zk_client))
+    errors.extend(check_ephemeral_sessions_fast(zk_client))
+    errors.extend(check_ephemeral_znode_consistency(zk_client))
+    errors.extend(check_ephemeral_dump_consistency(zk_client))
+    errors.extend(check_watch_sessions_clients(zk_client))
+    errors.extend(check_watch_sessions_duplicate(zk_client))
+    print("Check_complex results in %s errors: " % len(errors))
+    pprint(errors)
+    return errors

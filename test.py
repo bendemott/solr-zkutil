@@ -13,7 +13,8 @@ from solrzkutil.healthy import (check_ephemeral_sessions_fast,
                                 get_solr_session_ids,
                                 check_watch_sessions_duplicate,
                                 check_watch_session_consistency,
-                                check_watch_sessions_clients)
+                                check_watch_sessions_clients, 
+                                check_complex)
 
 logging.basicConfig()
 log = logging.getLogger()
@@ -67,6 +68,12 @@ def test_check_watch_session_clients():
     if not response:
         log.info('"check_watch_session_clients" returned success!')
 
+def test_check_complex():
+    response = check_complex(c)
+    pprint(response)
+    if not response:
+        log.info('"check_complex" returned success!')
+
 def main(argv=None):
     test_check_zookeeper_connectivity()
     test_check_ephemeral_session_fast()
@@ -75,6 +82,8 @@ def main(argv=None):
     test_get_solr_session_ids()
     test_check_watch_session_clients()
     test_check_watch_sessions_duplicate()
+    test_check_complex()
+
     
 if __name__ == '__main__':
     sys.exit(main())
