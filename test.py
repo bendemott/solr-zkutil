@@ -74,6 +74,12 @@ def test_check_complex():
     if not response:
         log.info('"check_complex" returned success!')
 
+def test_check_complex_influx():
+    errors = check_complex(c)
+    error_count = len(errors)
+    influx_complex_check = "zk_custom complex_check=%s" % error_count
+    print(influx_complex_check)
+
 def main(argv=None):
     test_check_zookeeper_connectivity()
     test_check_ephemeral_session_fast()
@@ -83,7 +89,7 @@ def main(argv=None):
     test_check_watch_session_clients()
     test_check_watch_sessions_duplicate()
     test_check_complex()
-
+    test_check_complex_influx()
     
 if __name__ == '__main__':
     sys.exit(main())
