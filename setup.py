@@ -13,6 +13,11 @@ Maintainers Note... Upload to PYPI:
     
     3.) Upload to pypi prod
     python setup.py sdist upload -r pypi
+    
+Maintainers Note... Tagging:
+    
+    1.) tag new version with ``git tag -a 0.xx``
+    2.) 
 """
 import os
 from os.path import abspath, dirname, join
@@ -45,7 +50,7 @@ except Exception as e:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.97',
+    version='0.98',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),
