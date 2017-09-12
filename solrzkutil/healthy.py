@@ -800,6 +800,6 @@ def check_complex(zk_client):
     errors.extend(check_ephemeral_dump_consistency(zk_client))
     errors.extend(check_watch_sessions_clients(zk_client))
     errors.extend(check_watch_sessions_duplicate(zk_client))
-    print("Check_complex results in %s errors: " % len(errors))
-    pprint(errors)
+    # print("Check_complex results in %s errors: " % len(errors))
+    # pprint(errors)
     return errors
