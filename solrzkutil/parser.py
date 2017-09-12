@@ -1,5 +1,6 @@
 import string
 import struct
+from collections import defaultdict
 from dateutil import parser
 
 
@@ -61,12 +62,196 @@ def parse_zxid(text):
 
     return zxid_epoch, zxid_count
 
+def parse_admin_wchc(text):
+    """
+    Parser zookeeper admin command `wchp`
+    
+    wchp - watches by session
+        
+        
+      0x15dc0117fd6633a
+            /clusterstate.json
+            /clusterprops.json
+            /aliases.json
+      0x15dc0117fd66384
+            /clusterstate.json
+            /clusterprops.json
+            /aliases.json
+      0x15dc0117fd670fe
+            /clusterstate.json
+            /clusterprops.json
+            /aliases.json
+      0x15dc0117fd631b9
+            /clusterstate.json
+            /collections/efc-jobs-suggest/leader_elect/shard1/election/242534181306977427-core_node3-n_0000000111
+            /overseer_elect/election/242534181306977427-10.51.65.74:8983_solr-n_0000121138
+            /collections/efc-profiles-col/state.json
+            /collections/efc-profiles-col/leader_elect/shard1/election/242534181306977427-core_node10-n_0000000443
+            /collections/jsm-efc-jobs-col/state.json
+            /collections/efc-jobs-suggest/state.json
+            /collections/efc-jobsearch-col/state.json
+            /configs/efc-jobs-suggest-2017-07-26T21:38:56.326374
+            /security.json
+            /collections/efc-jobsearch-col/leader_elect/shard1/election/242534181306977427-core_node9-n_0000000246
+            /configs/efc-profiles-match-2017-03-06T22:33:54.325668
+            /configs/efc-jobs-2017-07-27T15:52:13.401112
+            /clusterprops.json
+            /collections/jsm-efc-jobs-col/leader_elect/shard1/election/242534181306977427-core_node6-n_0000001274
+            /configs/jsm-efc-jobs-2017-08-14T22:58:17.350259
+            /collections/efc-profiles-match-col/leader_elect/shard1/election/242534181306977427-core_node10-n_0000000245
+            /configs/efc-profiles-2017-06-08T15:34:56.672279
+            /aliases.json
+            /collections/efc-profiles-match-col/state.json
+            /configs/jsm-efc-jobs-2017-08-16T23:43:42.259417
+      0x15dc0117fd631b6
+            /clusterstate.json
+            /collections/efc-profiles-col/state.json
+            /collections/jsm-efc-jobs-col/state.json
+            /collections/efc-jobs-suggest/state.json
+            /collections/efc-jobsearch-col/state.json
+            /configs/efc-jobs-suggest-2017-07-26T21:38:56.326374
+            /security.json
+            /configs/efc-profiles-match-2017-03-06T22:33:54.325668
+            /configs/efc-jobs-2017-07-27T15:52:13.401112
+            /clusterprops.json
+            /configs/jsm-efc-jobs-2017-08-14T22:58:17.350259
+            /configs/efc-profiles-2017-06-08T15:34:56.672279
+            /aliases.json
+            /collections/efc-profiles-match-col/state.json
+            /configs/jsm-efc-jobs-2017-08-16T23:43:42.259417
+    """
+    data = defaultdict(list)
+    ZNODE_IDENT = '/'
+    SESSION_IDENT = '0x'
+    session = None
+    path = None
+    for line in text.split("\n"):
+    
+        line = line.strip()
+        
+        if not line:
+            continue 
+        
+        if line.startswith(ZNODE_IDENT):
+            path = line
+        elif line.startswith(SESSION_IDENT):
+            session = hex_or_none(line)
+        else:
+            continue
 
-def parse_admin_cons(cons_str):
+        if not all((session, path)):
+            continue
+            
+        data[session].append(path)
+        
+    return data
+    
+def parse_admin_wchp(text):
+    """
+    Parser zookeeper admin command `wchp`
+    
+    wchp - watches by node name.
+    
+    Example::
+    
+        /collections/efc-profiles-col/leader_elect/shard1/election/98445948263739830-core_node8-n_0000000442
+            0x35da78d8ab14c93
+        /collections/jsm-efc-jobs-col/leader_elect/shard1/election/98445948263739830-core_node4-n_0000001273
+            0x35da78d8ab14c93
+        /security.json
+            0x35da78d8ab14c93
+        /overseer_elect/election/98445948263739830-10.51.64.251:8983_solr-n_0000121137
+            0x35da78d8ab14c93
+        /configs/efc-profiles-match-2017-03-06T22:33:54.325668
+            0x35da78d8ab14c93
+        /configs/jsm-efc-jobs-2017-08-14T22:58:17.350259
+            0x35da78d8ab14c93
+        /aliases.json
+            0x25d9a46df6374da
+            0x15d9a46de66261f
+            0x35da78d8ab16651
+            0x35da78d8ab16ad3
+            0x35da78d8ab1664f
+            0x35da78d8ab16a05
+            0x25d9a46df63262a
+            0x35da78d8ab1178b
+            0x35da78d8ab14c93
+        /collections/efc-profiles-match-col/state.json
+            0x35da78d8ab14c93
+        /clusterstate.json
+            0x25d9a46df6374da
+            0x15d9a46de66261f
+            0x35da78d8ab16651
+            0x35da78d8ab16ad3
+            0x35da78d8ab1664f
+            0x35da78d8ab16a05
+            0x25d9a46df63262a
+            0x35da78d8ab1178b
+            0x35da78d8ab14c93
+        /collections/efc-profiles-col/state.json
+            0x35da78d8ab14c93
+        /collections/jsm-efc-jobs-col/state.json
+            0x35da78d8ab14c93
+        /collections/efc-jobs-suggest/state.json
+            0x35da78d8ab14c93
+        /collections/efc-jobsearch-col/state.json
+            0x35da78d8ab14c93
+        /configs/efc-jobs-suggest-2017-07-26T21:38:56.326374
+            0x35da78d8ab14c93
+        /collections/efc-jobs-suggest/leader_elect/shard1/election/98445948263739830-core_node1-n_0000000110
+            0x35da78d8ab14c93
+        /configs/efc-jobs-2017-07-27T15:52:13.401112
+            0x35da78d8ab14c93
+        /clusterprops.json
+            0x25d9a46df6374da
+            0x15d9a46de66261f
+            0x35da78d8ab16651
+            0x35da78d8ab16ad3
+            0x35da78d8ab1664f
+            0x35da78d8ab16a05
+            0x25d9a46df63262a
+            0x35da78d8ab1178b
+            0x35da78d8ab14c93
+        /collections/efc-jobsearch-col/leader_elect/shard1/election/98445948263739830-core_node7-n_0000000245
+            0x35da78d8ab14c93
+        /collections/efc-profiles-match-col/leader_elect/shard1/election/98445948263739830-core_node8-n_0000000244
+            0x35da78d8ab14c93
+        /configs/efc-profiles-2017-06-08T15:34:56.672279
+            0x35da78d8ab14c93
+        /configs/jsm-efc-jobs-2017-08-16T23:43:42.259417
+            0x35da78d8ab14c93
+    """
+    data = defaultdict(list)
+    ZNODE_IDENT = '/'
+    SESSION_IDENT = '0x'
+    session = None
+    path = None
+    for line in text.splitlines():
+    
+        line = line.strip()
+        
+        if not line:
+            continue 
+        
+        if line.startswith(ZNODE_IDENT):
+            path = line
+        elif line.startswith(SESSION_IDENT):
+            session = hex_or_none(line)
+        else:
+            continue
+
+        if not all((session, path)):
+            continue
+            
+        data[path].append(session)
+        
+    return data
+        
+def parse_admin_cons(text):
     """
     Parse zookeeper admin command 'cons' output into a data structure.
 
-    Cons returns connection information for a particular server.
+    `cons` returns connection information for a particular server.
 
     sid is the session id
     lop is the last operation performed by the client
@@ -90,7 +275,8 @@ def parse_admin_cons(cons_str):
       /10.50.66.190:40744[1](queued=0,recved=1752,sent=1762,sid=0x35b643799ab344e,lop=PING,est=149677443
       
       
-    Outputs:
+    Outputs::
+    
         [{'avglat': 0,
           'client': ['10.51.65.171', '41322'],
           'connections': 1,
@@ -112,7 +298,7 @@ def parse_admin_cons(cons_str):
           {...}]
     """
     data = []
-    for line in cons_str.split("\n"):
+    for line in text.splitlines():
         entry = {
             'client': None,
             'connections': 0,
@@ -183,7 +369,7 @@ def parse_admin_cons(cons_str):
 
 def parse_admin_dump(text):
     """
-    Example Output::
+    Example Input::
 
           SessionTracker dump:
           Session Sets (13):
@@ -236,7 +422,7 @@ def parse_admin_dump(text):
                 /live_nodes/10.50.65.133:8983_solr
                 /overseer_
 
-    Outputs:
+    Outputs::
     
         {'ephemerals': {170105861950612946L: ['/collections/efc-profiles-col/leaders/shard1/leader',
                                               '/collections/efc-profiles-match-col/leader_elect/shard1/election/170105861950612946-core_node10-n_0000000230',
@@ -290,7 +476,7 @@ def parse_admin_dump(text):
         SESSIONS: [],
         EPHEMERALS: {},
     }
-    for line in text.split('\n'):
+    for line in text.splitlines():
         if 'sessiontracker dump' in line.lower():
             mode = SESSIONS
         elif 'ephemeral nodes dump' in line.lower():
