@@ -11,8 +11,10 @@ import time
 from pprint import pformat
 import logging
 log = logging.getLogger(__name__)
-
+import sys
 import six
+import traceback
+
 from kazoo.retry import KazooRetry
 from kazoo.client import KazooClient
 
@@ -786,6 +788,13 @@ def check_queue_sizes(zk_client):
     entries, return information.
     """
 
+def get_exception_traceback():
+    ex_type, ex, tb = sys.exc_info()
+    traceback.format_tb(tb,10)
+    exception_info =  " ** (%s) %s - %s " % (ex_type, ex, ";\n".join(traceback.format_tb(tb,10)))
+    del tb
+    return exception_info
+
 def check_complex(zk_client):
     """
     This function does several complex checks: 
@@ -794,12 +803,45 @@ def check_complex(zk_client):
         * Checks watches.
     """
     errors = []
-    errors.extend(check_zookeeper_connectivity(zk_client))
-    errors.extend(check_ephemeral_sessions_fast(zk_client))
-    errors.extend(check_ephemeral_znode_consistency(zk_client))
-    errors.extend(check_ephemeral_dump_consistency(zk_client))
-    errors.extend(check_watch_sessions_clients(zk_client))
-    errors.extend(check_watch_sessions_duplicate(zk_client))
-    # print("Check_complex results in %s errors: " % len(errors))
-    # pprint(errors)
+
+    try:
+        i = 1/0
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        raise Exception
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_zookeeper_connectivity(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_ephemeral_sessions_fast(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_ephemeral_znode_consistency(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_ephemeral_dump_consistency(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_watch_sessions_clients(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_watch_sessions_duplicate(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
     return errors
