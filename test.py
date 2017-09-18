@@ -75,7 +75,6 @@ def test_check_complex():
         log.info('"check_complex" returned success!')
 
 def main(argv=None):
-    print(c)
     test_check_complex()
     # test_check_zookeeper_connectivity()
     # test_check_ephemeral_session_fast()
