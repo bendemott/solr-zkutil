@@ -197,8 +197,8 @@ def check_watch_sessions_duplicate(zk_client):
     wchc_results = multi_admin_command(zk_client, b'wchc')
     wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
 
-    from pprint import pprint
-    pprint(wchc_result_parsed)
+    # from pprint import pprint
+    # pprint(wchc_result_parsed)
     
     #session_watches = {}
     #for host_idx, wchc in enumerate(wchc_result_parsed):
