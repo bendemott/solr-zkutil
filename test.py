@@ -14,16 +14,16 @@ from solrzkutil.healthy import (check_ephemeral_sessions_fast,
                                 check_watch_sessions_duplicate,
                                 check_watch_session_consistency,
                                 check_watch_sessions_clients, 
-                                check_complex)
+                                check_complex, 
+                                connect_to_zookeeper)
 
 logging.basicConfig()
 log = logging.getLogger()
 kazoo_log = logging.getLogger('kazoo.client')
 kazoo_log.setLevel(logging.ERROR)
 log.setLevel(logging.ERROR)
-
 zookeepers = 'zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181'
-c = KazooClient(zookeepers)
+c = connect_to_zookeeper(zookeepers)
 print("ZK HOSTS: ", c.hosts)
 
 def test_check_zookeeper_connectivity():
@@ -75,14 +75,15 @@ def test_check_complex():
         log.info('"check_complex" returned success!')
 
 def main(argv=None):
-    test_check_zookeeper_connectivity()
-    test_check_ephemeral_session_fast()
-    test_check_ephemeral_znode_consistency()
-    test_check_ephemeral_dump_consistency()
-    test_check_watch_session_clients()
-    test_check_watch_sessions_duplicate()
-    test_get_solr_session_ids()
+    print(c)
     test_check_complex()
+    # test_check_zookeeper_connectivity()
+    # test_check_ephemeral_session_fast()
+    # test_check_ephemeral_znode_consistency()
+    # test_check_ephemeral_dump_consistency()
+    # test_check_watch_session_clients()
+    # test_check_watch_sessions_duplicate()
+    # test_get_solr_session_ids()
 
 if __name__ == '__main__':
     sys.exit(main())

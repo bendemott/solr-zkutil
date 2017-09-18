@@ -31,6 +31,14 @@ from solrzkutil.util import (netcat,
 from pprint import pprint
 ZNODE_PATH_SEPARATOR = '/'
 
+def connect_to_zookeeper(zookeepers):
+    try:
+        c = KazooClient(zookeepers)
+        return c
+    except Exception as e:
+        output = [get_exception_traceback()]
+        log.error(output)
+
 def multi_admin_command(zk_client, command):
     """
     Executes an administrative command over multiple zookeeper nodes in a session-less manner 
@@ -803,16 +811,6 @@ def check_complex(zk_client):
         * Checks watches.
     """
     errors = []
-
-    try:
-        i = 1/0
-    except Exception as e:
-        errors.extend([get_exception_traceback()])
-
-    try:
-        raise Exception
-    except Exception as e:
-        errors.extend([get_exception_traceback()])
 
     try:
         errors.extend(check_zookeeper_connectivity(zk_client))
