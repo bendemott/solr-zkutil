@@ -19,8 +19,8 @@ from solrzkutil.healthy import (check_ephemeral_sessions_fast,
 logging.basicConfig()
 log = logging.getLogger()
 kazoo_log = logging.getLogger('kazoo.client')
-kazoo_log.setLevel(logging.ERROR)
-log.setLevel(logging.ERROR)
+kazoo_log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 zookeepers = 'zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181'
 c = KazooClient(zookeepers)
 print("ZK HOSTS: ", c.hosts)
