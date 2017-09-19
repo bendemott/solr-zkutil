@@ -76,13 +76,13 @@ def test_check_complex():
 
 def main(argv=None):
     test_check_complex()
-    # test_check_zookeeper_connectivity()
-    # test_check_ephemeral_session_fast()
-    # test_check_ephemeral_znode_consistency()
-    # test_check_ephemeral_dump_consistency()
-    # test_check_watch_session_clients()
-    # test_check_watch_sessions_duplicate()
-    # test_get_solr_session_ids()
+    test_check_zookeeper_connectivity()
+    test_check_ephemeral_session_fast()
+    test_check_ephemeral_znode_consistency()
+    test_check_ephemeral_dump_consistency()
+    test_check_watch_session_clients()
+    test_check_watch_sessions_duplicate()
+    test_get_solr_session_ids()
 
 if __name__ == '__main__':
     sys.exit(main())
