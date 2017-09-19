@@ -13,13 +13,14 @@ from solrzkutil.healthy import (check_ephemeral_sessions_fast,
                                 get_solr_session_ids,
                                 check_watch_sessions_duplicate,
                                 check_watch_session_consistency,
-                                check_watch_sessions_clients)
+                                check_watch_sessions_clients,
+                                check_queue_sizes)
 
 logging.basicConfig()
 log = logging.getLogger()
 kazoo_log = logging.getLogger('kazoo.client')
-kazoo_log.setLevel(logging.INFO)
-log.setLevel(logging.DEBUG)
+kazoo_log.setLevel(logging.WARN)
+log.setLevel(logging.INFO)
 
 zookeepers = 'zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181'
 c = KazooClient(zookeepers)
@@ -67,14 +68,21 @@ def test_check_watch_session_clients():
     if not response:
         log.info('"check_watch_session_clients" returned success!')
 
+def test_check_queue_sizes():
+    response = check_queue_sizes(c)
+    pprint(response)
+    if not response:
+        log.info('"check_queue_sizes" returned success!')
+
 def main(argv=None):
-    test_check_zookeeper_connectivity()
-    test_check_ephemeral_session_fast()
-    test_check_ephemeral_znode_consistency()
-    test_check_ephemeral_dump_consistency()
-    test_get_solr_session_ids()
-    test_check_watch_session_clients()
-    test_check_watch_sessions_duplicate()
+    #test_check_zookeeper_connectivity()
+    #test_check_ephemeral_session_fast()
+    #test_check_ephemeral_znode_consistency()
+    #test_check_ephemeral_dump_consistency()
+    #test_get_solr_session_ids()
+    #test_check_watch_session_clients()
+    #test_check_watch_sessions_duplicate()
+    test_check_queue_sizes()
     
 if __name__ == '__main__':
     sys.exit(main())

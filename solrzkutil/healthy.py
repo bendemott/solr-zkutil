@@ -29,6 +29,23 @@ from solrzkutil.util import (netcat,
 from pprint import pprint
 ZNODE_PATH_SEPARATOR = '/'
 
+# TODO handle unavailable server errors intelligently.
+# TODO make summary functions to get summary output from (success, data, errors) for specific check functions
+# TODO change the 'check' functions to return a tuple / (success, data, errors)
+#      where data is extra information that may be useful to summary functions.
+# TODO a check needs to exist for watch functionality around known paths that must exist per collection.
+# TODO ignore early errors like NoNodeError where it will be represented later by comparison of directories.
+# TODO ignore unavailable server errors in the comparisons, this isn't what is being checked... if only 2 of 3 servers are
+#      available you should only compare the two.
+#      Any problems with 
+# TODO format the host tuple in error messages
+# TODO change all errors to use custom Exception classes with metrics built into them.
+# TODO write "resolution" classes that take information from check_* function output and suggest possible resolutions.
+# TODO during N-way comparisons, if only 1 of N is different, customize the log entry to indicate the node that is 'missing' information
+#      for this comparison simply get a set object of all repsonses, if the set contains exactly 1 element there
+#      are no differences.  If the set contains 2 elements, 1 host is inconsistent.
+#      If the set contains 3 o more elements, there is a general consistency issue.
+
 def multi_admin_command(zk_client, command):
     """
     Executes an administrative command over multiple zookeeper nodes in a session-less manner 
@@ -65,6 +82,7 @@ def multi_admin_command(zk_client, command):
         wait_thread.join()
         
     return admin_results
+
 
 def znode_path_join(parts):
     """
@@ -109,8 +127,6 @@ def check_ephemeral_dump_consistency(zk_client):
     
     :param zookeepers: A zookeeper connection string (should describe all ensemble members)
     """
-
-    
     zk_hosts = zk_client.hosts
     dump_results = multi_admin_command(zk_client, b'dump')
     ephemerals = [parse_admin_dump(item)['ephemerals'] for item in dump_results]
@@ -157,6 +173,8 @@ def check_watch_sessions_clients(zk_client):
 def check_watch_sessions_solr(zk_client):
     """
     Check watch consistency for solr sessions only.
+    Each solr server watches a very specific set of paths based on its replicas, online collections etc... 
+    This function ensures the watches that should exist do.
     """
     # TODO, in order to verify this you need to know quite a bit of information about collections,
     # active config sets, etc.
@@ -177,7 +195,7 @@ def check_watch_sessions_duplicate(zk_client):
     Ensure no watch session id is represented on more than one server
     This shouldn't happen, and if it does it indicates a hung or invalid watch, which means a session was
     reconnected / reused it chose a different Zookeeper host and the old watch never was cleared.
-    Restart the Zookeeper host with the 
+    Restart the Zookeeper host with the invalid watch / session to resolve this issue.
 
     We will use the ``wchc`` administrative command to get watches by session-id for this check.
     """
@@ -187,18 +205,11 @@ def check_watch_sessions_duplicate(zk_client):
     wchc_results = multi_admin_command(zk_client, b'wchc')
     wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
 
-    from pprint import pprint
-    pprint(wchc_result_parsed)
-    
-    #session_watches = {}
-    #for host_idx, wchc in enumerate(wchc_result_parsed):
-
-
     # First thing to check, do any of the hosts share the same session, this would be a problem.
     comparisons = {tuple(sorted(pair)) for pair in itertools.product(range(len(zk_hosts)), repeat=2) if pair[0] != pair[1]}
     for idx1, idx2 in comparisons:
         # Set comparison to determine differences between the two hosts
-        differences = set(wchc_result_parsed[0].keys()) ^ set(wchc_result_parsed[1].keys())
+        differences = set(wchc_result_parsed[idx1].keys()) & set(wchc_result_parsed[idx2].keys())
         if not differences:
             log.debug('host:{host1} and host:{host2} have {watch1ct} and {watch2ct} watches, and no duplicates.'.format(
                 host1=zk_hosts[idx1],
@@ -218,13 +229,10 @@ def check_watch_sessions_duplicate(zk_client):
 
     return errors
     
-def check_watch_sessions_present(zk_client, sessions, watch_paths):
+def check_watch_sessions_present(zk_client, session_watches):
     """
     Verify that watches exist on all the paths defined for the sessions defined.
-    This function will assume you expect exactly 1 watch to exist per session defined.
-
-    For any path in ``watch_paths`` one of the sessions in ``sessions`` must be watching it
-    or we have an error.
+    This function will assume you expect exactly 1 watch to exist per session/path defined.
     
     Note that watches can exist on any Zookeeper server, so we have to check all of the servers
     for watches.
@@ -237,7 +245,7 @@ def check_watch_sessions_present(zk_client, sessions, watch_paths):
     wchc_results = multi_admin_command(zk_client, b'wchc')
     wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
     
-    # combine / merge all of the sessiosns
+    # combine / merge all of the sessions
     session_watches = {}
     for wchc in wchc_result_parsed:
         session_watches.update(wchc)
@@ -255,8 +263,6 @@ def check_watch_session_consistency(zk_client, watch_paths, exclude=None, includ
                     other client sessions.
     :param watch_paths: A list of fully qualified znode paths that should have consistent 
                         watch sessions across them.
-    
-    Should have a consistent set of watches across servers.
     """
     
     '''
@@ -349,6 +355,7 @@ def check_zookeeper_connectivity(zk_client, min_timeout=2):
     kazoo_client_cache_enable(True)
     return errors
     
+# TODO all the async functions can be placed in a class, which will make them easier to manage.
 def get_async_ready(asyncs):
     """
     Given a dictionary containing async objects wait for them all to become ready before returning.
@@ -423,6 +430,72 @@ def get_async_call_per_host(zk_client, args, call):
             results[arg][host_idx] = async_result.exception or async_result.get()
             
     return results
+
+def get_async_result_tuples(results):
+    """
+    Given a dictionary like::
+
+        {
+            arg_0: {
+                0: result or exception obj
+                1: result or exception obj 
+                2: result or exception obj 
+            },
+            arg_1: {
+                0: result or exception obj
+                1: result or exception obj 
+                2: result or exception obj 
+            },
+        }
+
+    Return a list, composed of tuples of (arg, host, result)
+    where arg is the input argument, host is the host index and
+    result is the response/result object from the zookeeper api call
+
+    Any results that contain exception objects / errors are ignored.
+
+    :param result: A result set dictionary as returned from ``get_async_call_per_host``
+    :returns: ``list``
+    """
+    if not isinstance(results, dict):
+        raise ValueError('"result" must be dict, got: %s' % type(dict))
+
+    items = []
+
+    for arg, host_result in six.viewitems(results):
+        items.extend([(arg, host, result) for host, result in six.viewitems(host_result) if not isinstance(result, Exception)])
+
+    return items
+
+def get_async_result_set(result):
+    """
+    Given a dictionary like::
+
+        {
+            arg_0: {
+                0: result or exception obj
+                1: result or exception obj 
+                2: result or exception obj 
+            },
+            arg_1: {
+                0: result or exception obj
+                1: result or exception obj 
+                2: result or exception obj 
+            },
+        }
+
+    Return a set, composed of all the result objects combined.
+
+    Any results that contain exception objects / errors are ignored.
+
+    :param result: A result set dictionary as returned from ``get_async_call_per_host``
+    :returns: ``set``
+    """
+    if not isinstance(result, dict):
+        raise ValueError('"result" must be dict, got: %s' % type(dict))
+    
+    result_items = get_async_result_list(result)
+    return set(result_items)
             
     
 def get_ephemeral_paths_children_per_host(zk_client):
@@ -451,9 +524,7 @@ def get_ephemeral_paths_children_per_host(zk_client):
     # ensure all the clients are connected
     kazoo_clients_connect(clients)
     
-    retry = KazooRetry(max_tries=max(len(clients), 2))
     ephemeral_directories = set()
-    #dump_output = retry(zk_client.command, b'dump')
     dump_results = multi_admin_command(zk_client, b'dump')
     
     
@@ -468,14 +539,14 @@ def get_ephemeral_paths_children_per_host(zk_client):
     log.debug("ephemeral paths resolved: %d, ...\n%s" % (len(ephemeral_znodes), pformat(ephemeral_znodes)))
     # We assume that all the znodes that are ephemeral from the 'dump' command are files.
     # We then calculate a set of all directories to examine children in.
-    ephemeral_directories = [] 
+    ephemeral_directories = []
     for znode in ephemeral_znodes:
         if not znode or znode.strip() == ZNODE_PATH_SEPARATOR:
-            log.warn('a znode returned from `dump` is unexpectedly empty: "%s", the output of dump is: %s' % (znode, dump_output))
+            log.warn('a znode returned from `dump` is unexpectedly empty: "%s", the output of dump is: %s' % (znode, dump_results))
         try:
             ephemeral_directories.append(znode_path_split(znode)[0])
         except Exception as e:
-            log.error('exception while getting znode path: "%s", the output of dump is: %s' % (znode, dump_output))
+            log.error('exception while getting znode path: "%s", the output of dump is: %s' % (znode, dump_results))
             continue
             
     ephemeral_directories = sorted(set(ephemeral_directories))
@@ -488,7 +559,7 @@ def get_ephemeral_paths_children_per_host(zk_client):
     return results
     
     
-def get_async_call_per_host_errors(zk_client, async_result):
+def get_async_call_per_host_errors(zk_client, async_result, ignore=None):
     """
     Return a list of errors contained within the response of ephemeral_children
     
@@ -498,6 +569,8 @@ def get_async_call_per_host_errors(zk_client, async_result):
                            members of the ensemble.
                            
     :param async_result: The response from ``get_async_call_per_host()``
+    :param ignore: Ignore these exception objects.
+    :returns: ``list``
     """
     hosts = zk_client.hosts
     # note that 'cb' is a kazoo.interfaces.IAsyncResult
@@ -506,6 +579,10 @@ def get_async_call_per_host_errors(zk_client, async_result):
         for client_idx, result in six.viewitems(host_result):
             if isinstance(result, Exception):
                 exception = result
+                if ignore and any([isinstance(exception, exc) for exc in ignore]):
+                    log.debug('ignore error class: [%s] %s' % (exception.__class__.__name__, exception))
+                    continue
+
                 # see if this one is an error.
                 errors.append(
                     "error from host: %s for input: [%s], error: (%s) %s" % (
@@ -734,7 +811,38 @@ def get_solr_session_ids(zk_client):
         log.warn(errors)
     
     return live_node_sessions
+
+def get_zookeeper_collections(zk_client):
+    """
+    Discover the collections that exist by name in Zookeeper.
+    """
+    pass
+
+def get_zookeeper_collections_state(zk_client):
+    """
+    Get a json object for state.json for each Zookeeper collection.
+    """
     
+def get_solr_connection_affinitiy(zk_client):
+    """
+    Get information about which zookeeper nodes solr is connected to. 
+    Solr randomly picks a Zookeeper node to connect to, which means this is 
+    where its watches and ephemeral sessions will come from.
+
+    If this host ever experiences an issue, the solr host will have an issue.
+    In order to understand the severity and impact of a Zookeeper host degredation 
+    you must understand Solr host affinitiy.
+    """
+
+
+def get_solrj_connection_affinity(zk_client):
+    """
+    Get information about where SolrJ clients are connected
+
+    This shows information about SolrJ clients, the ip-addresses they are comming from, and the Zookeeper
+    hosts they are connected to, as well as an overview of their session ids. 
+    Because multiple sessions can be associated with a single ip address, we will group clients by remote IP address.
+    """
     
 def check_solr_live_nodes(zk_client):
     """
@@ -775,13 +883,115 @@ def check_collection_state(zk_client):
     """
     
     
-def check_collections_consistency(zk_client):
+def check_collections_state_consistency(zk_client):
     """
-    Check that collections are consistent between solr and zookeeper
+    Check that collections, shards, replicas, and core states are consistent between solr and zookeeper
+    Check the core API to ensure the core is healthy in addition to the Replica.
+    """
+
+def get_znode_children_age(zk_client, znodes, coalesce=max):
+    """
+    Get the age 
+
+    :param zk_client: A KazooClient object
+    :param znodes: a sequences of paths to get stats for.  The stats will be gathered
+                   using async operations as quickly as possible.
+    :param coalesce: a function that accepts a sequence and coalesces between them
+                     the default behavior is to find the (max) of the values.
+                     If you provide ``None`` for coalesce, individual results from each
+                     Zookeeper host will be returned.
     """
     
-def check_queue_sizes(zk_client):
+def get_znode_children_counts(zk_client, znodes, coalesce=max):
+    """
+    Get zookeeper child counts.  All zookeeper servers are queried, the function given to ``coalesce`` 
+    used to coalesce the results into a scalar.
+
+    :param zk_client: A KazooClient object
+    :param znodes: a sequences of paths to get stats for.  The stats will be gathered
+                   using async operations as quickly as possible.
+    :param coalesce: a function that accepts a sequence and coalesces between them
+                     the default behavior is to find the (max) of the values.
+                     If you provide ``None`` for coalesce, individual results from each
+                     Zookeeper host will be returned.
+                   
+    """
+    if not callable(coalesce):
+        raise ValueError('"coalesce" must be a callable got: %s' % type(coalesce))
+
+    child_paths = sorted(set(znodes))
+    # zstats.numChildren
+    def call(client, znode):
+        return client.get_async(znode)
+        
+    log.debug('retreiving child node counts for %d paths' % len(child_paths))
+    znode_results = get_async_call_per_host(zk_client, child_paths, call)
+    errors = get_async_call_per_host_errors(zk_client, znode_results)
+    results = get_async_result_tuples(znode_results)
+
+    paths_stats = defaultdict(list)
+    for path, host, response in results:
+        contents, stats = response
+        paths_stats[path].append(getattr(stats, 'numChildren', 0))
+
+    if coalesce is None:
+        return paths_stats
+
+    stats = {}
+    stats.update({k: coalesce(v) for k, v in six.viewitems(paths_stats)})
+
+    return stats
+
+def get_znode_contents_age(zk_client, directories):
+    """
+    Given a list of directories return a map of all znode paths in the directory and the objects
+    modified or creation date.
+    """
+    zk.set("/my/favorite", b"some data")
+
+def get_zookeeper_time(zk_client):
+    """
+    Get the current time on the Zookeeper servers 
+    """
+
+
+def check_server_time_consistency(zk_client):
+    """
+    Check the drift between local time on Zookeeper ensemble members. 
+    If the time is off, bad things will happen.
+    """
+
+ZK_QUEUE_PATHS = [
+    '/overseer/collection-map-completed',
+    '/overseer/collection-map-failure',
+    '/overseer/collection-map-running',
+    '/overseer/collection-queue-work',
+    'queue',
+    'queue-work'
+]
+
+def check_queue_age(zk_client):
+    """
+    Check to ensure timestamps of items in QUEUE paths are not too old.
+    """
+    # TODO
+
+def check_queue_sizes(zk_client, threshold=5):
     """
     For the most part queues should be empty.  If they contain more than a given number of 
     entries, return information.
+
+    :param threshold: ``int`` the max number of children a queue can contain before an error is raised.
     """
+
+    errors = []
+    stats = get_znode_children_counts(zk_client, ZK_QUEUE_PATHS)
+    if stats is None:
+        raise ValueError("stats is None!!!")
+    for path, max_children in six.viewitems(stats):
+        if max_children > threshold:
+            errors.append(
+                "queue [%s] is backed up with: %d children" % (path, max_children)
+            )
+
+    return errors
