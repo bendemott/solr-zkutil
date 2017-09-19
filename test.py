@@ -21,7 +21,6 @@ log = logging.getLogger()
 kazoo_log = logging.getLogger('kazoo.client')
 kazoo_log.setLevel(logging.INFO)
 log.setLevel(logging.DEBUG)
-
 zookeepers = 'zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181'
 c = KazooClient(zookeepers)
 print("ZK HOSTS: ", c.hosts)
@@ -90,6 +89,6 @@ def main(argv=None):
     test_check_watch_sessions_duplicate()
     test_check_complex()
     test_check_complex_influx()
-    
+
 if __name__ == '__main__':
     sys.exit(main())
