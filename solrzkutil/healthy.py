@@ -803,7 +803,7 @@ def get_exception_traceback():
     del tb
     return exception_info
 
-def check_complex(zk_client):
+def check_ensemble_for_complex_errors(zk_client):
     """
     This function does several complex checks: 
         * Checks zookeeper connectivity.
