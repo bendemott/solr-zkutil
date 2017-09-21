@@ -50,7 +50,7 @@ except Exception as e:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.98',
+    version='0.99',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),
