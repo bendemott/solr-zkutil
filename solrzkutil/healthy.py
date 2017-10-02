@@ -1269,6 +1269,8 @@ def check_ensemble_for_complex_errors(zk_client):
         * Checks zookeeper connectivity.
         * Checks ephemeral nodes.
         * Checks watches.
+
+    :returns: a sequence of errors, empty list if there were no errors.
     """
     errors = []
 
@@ -1299,6 +1301,21 @@ def check_ensemble_for_complex_errors(zk_client):
 
     try:
         errors.extend(check_watch_sessions_duplicate(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_queue_sizes(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_watch_sessions_valid(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_overseer_election(zk_client))
     except Exception as e:
         errors.extend([get_exception_traceback()])
 
