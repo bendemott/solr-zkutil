@@ -733,11 +733,16 @@ def health_check(zookeepers):
                 check_overseer_election):
 
         print(style_text("RUNNING: %s" % check.__name__, TITLE_STYLE, lpad=2))
-        errors = check(zk_client)
+        try:
+            errors = check(zk_client)
+        except Exception as e:
+            print(healthy.get_exception_traceback())
+            print(style_text("ERROR RUNNING %s" % check.__name__, ERROR_STYLE, lpad=4))
+            
         if not errors:
-            print(style_text("NO ERRORS in %s" % check.__name__, STATS_STYLE, lpad=6))
+            print(style_text("NO ERRORS in %s" % check.__name__, STATS_STYLE, lpad=4))
         else:
-            print(style_text("ERRORS from %s" % check.__name__, INFO_STYLE, lpad=6))
+            print(style_text("ERRORS from %s" % check.__name__, INFO_STYLE, lpad=4))
 
         for err in errors:
             print(style_text(err, ERROR_STYLE, lpad=8))
