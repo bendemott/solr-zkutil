@@ -4,9 +4,9 @@ import socket
 import time
 import six
 import math
+import threading
 from random import choice 
 import logging
-import threading
 
 from kazoo.client import KazooClient
 from kazoo.client import KazooState
@@ -16,6 +16,7 @@ from kazoo.exceptions import OperationTimeoutError
 
 log = logging.getLogger(__name__)
 
+MODE_LEADER = 'leader'
 CONNECTION_CACHE_ENABLED = True
 CONNECTION_CACHE = {}
 def kazoo_client_cache_enable(enable):

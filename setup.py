@@ -14,10 +14,19 @@ Maintainers Note... Upload to PYPI:
     3.) Upload to pypi prod
     python setup.py sdist upload -r pypi
     
+Now with twine::
+
+    # Requires python 2.7.9+
+    
+    python setup.py sdist
+    twine upload dist/*
+    
 Maintainers Note... Tagging:
     
-    1.) tag new version with ``git tag -a 0.xx``
-    2.) 
+    1.) update setup.py ``version=`` variable
+    2.) tag new version with ``git tag -a x.xx``
+    3.) ``git commit -a -m "version x.xx"``
+    4.) ``git push origin x.xx``
 """
 import os
 from os.path import abspath, dirname, join
@@ -50,7 +59,7 @@ except Exception as e:
 setup(
     name=__application__,
     zip_safe=True,  # ok to compress the source archive on disk?
-    version='0.99',
+    version='1.0',
     author='Ben DeMott',
     author_email='ben.demott@gmail.com',
     packages=find_packages(),

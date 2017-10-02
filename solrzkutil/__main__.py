@@ -5,8 +5,8 @@ import sys
 if __name__ == '__main__':
     try:
         import solrzkutil
-    except ImportError:
-        sys.exit('solrzkutil python package is not installed.\n')
+    except ImportError as e:
+        sys.exit('solrzkutil python package is not installed. %s\n' % e)
 
     from solrzkutil import main
 
