@@ -4,6 +4,8 @@ Contains logic for health checks for Zookeeper and Solr
 from __future__ import unicode_literals
 from __future__ import print_function
 import itertools
+import datetime
+import json
 from threading import Thread
 import random
 from collections import defaultdict
@@ -16,20 +18,38 @@ import six
 from kazoo.retry import KazooRetry
 from kazoo.client import KazooClient
 
+from solrzkutil.formatter import format_host
+
 from solrzkutil.parser import (parse_admin_dump, 
                                parse_admin_cons, 
                                parse_admin_wchp, 
                                parse_admin_wchc)
 from solrzkutil.util import (netcat, 
-                             parse_zk_hosts, 
+                             parse_zk_hosts,
+
                              kazoo_clients_from_client, 
                              kazoo_clients_connect, 
                              kazoo_client_cache_enable)
 
 from pprint import pprint
+
+# TODO put these in a constants sub-module.
 ZNODE_PATH_SEPARATOR = '/'
+OVERSEER_ELECT_LEADER_PATH = '/overseer_elect/leader' # this is a file containing the current leader.
+OVERSEER_ELECT_ELECTION_PATH  = '/overseer_elect/election'
+LIVE_NODES_PATH = '/live_nodes'
+ZK_QUEUE_PATHS = [
+    '/overseer/collection-map-completed',
+    '/overseer/collection-map-failure',
+    '/overseer/collection-map-running',
+    '/overseer/collection-queue-work',
+    '/overseer/queue',
+    '/overseer/queue-work'
+]
 
 # TODO handle unavailable server errors intelligently.
+# TODO turn the async commands into a class in which operations can be performed on an object.
+# TODO move utility functions into util module.
 # TODO make summary functions to get summary output from (success, data, errors) for specific check functions
 # TODO change the 'check' functions to return a tuple / (success, data, errors)
 #      where data is extra information that may be useful to summary functions.
@@ -37,7 +57,7 @@ ZNODE_PATH_SEPARATOR = '/'
 # TODO ignore early errors like NoNodeError where it will be represented later by comparison of directories.
 # TODO ignore unavailable server errors in the comparisons, this isn't what is being checked... if only 2 of 3 servers are
 #      available you should only compare the two.
-#      Any problems with 
+#      Any problems with connecting will be reported in the connection check.
 # TODO format the host tuple in error messages
 # TODO change all errors to use custom Exception classes with metrics built into them.
 # TODO write "resolution" classes that take information from check_* function output and suggest possible resolutions.
@@ -86,6 +106,7 @@ def multi_admin_command(zk_client, command):
 
 def znode_path_join(parts):
     """
+    # TODO move to utils
     Given a sequence of node segments construct a fully qualified path.
     
     Can join paths from sequences like::
@@ -110,6 +131,7 @@ def znode_path_join(parts):
     
 def znode_path_split(path):
     """
+    # TODO move to utils
     Given an absolute znode path returns a tuple (directory, filename)
     
     Note that you should-not/cannot use path functions in Python to parse znode paths as they will not
@@ -165,6 +187,9 @@ def check_ephemeral_dump_consistency(zk_client):
 def check_watch_sessions_clients(zk_client):
     """
     Check watch consistency for client-related files, exclude solr hosts from these tests.
+
+    This verifies the watches that clients (solrj) should be watching they in-fact are watching.
+    if any client is watching some, but not all client-related files this will result in an exception.
     """
     CLIENT_WATCHES = ('/clusterprops.json', '/clusterstate.json', '/aliases.json')
     solr_sessions = get_solr_session_ids(zk_client)
@@ -178,10 +203,16 @@ def check_watch_sessions_solr(zk_client):
     """
     # TODO, in order to verify this you need to know quite a bit of information about collections,
     # active config sets, etc.
+    # - get collections
+    # - get state.json for replica, etc info
+    # - query solr for collection information
+    # - 
     
 def check_watch_sessions_valid(zk_client):
     """
     Ensure all watch sessions have a valid connection associated with them.
+
+    This works by getting the output of 'wchc' and comparing it to 'cons'.
     """
     # TODO finish me
     errors = []
@@ -189,6 +220,23 @@ def check_watch_sessions_valid(zk_client):
     wchc_results = multi_admin_command(zk_client, b'wchc')
     wchc_result_parsed = [parse_admin_wchc(result) for result in wchc_results]
     
+    # Get connection/session information
+    conn_results = multi_admin_command(zk_client, b'cons')
+    conn_data = map(parse_admin_cons, conn_results)
+    conn_data = list(itertools.chain.from_iterable(conn_data))
+    # Get a set() of all valid zookeeper sessions as integers
+    valid_sessions = {con.get('sid') for con in conn_data if 'sid' in con}
+
+    errors = []
+
+    for host_idx, watch_result in enumerate(wchc_result_parsed):
+        for session_id in watch_result.keys():
+            if session_id not in valid_sessions:
+                zk_host = format_host(zk_hosts[host_idx])
+                errors.append("zookeeper [%s] watch session [%s] connection missing (stale session?)" % (zk_host, session_id))
+
+    return errors
+
 
 def check_watch_sessions_duplicate(zk_client):
     """
@@ -199,7 +247,6 @@ def check_watch_sessions_duplicate(zk_client):
 
     We will use the ``wchc`` administrative command to get watches by session-id for this check.
     """
-    # TODO finish me
     errors = []
     zk_hosts = zk_client.hosts
     wchc_results = multi_admin_command(zk_client, b'wchc')
@@ -250,6 +297,7 @@ def check_watch_sessions_present(zk_client, session_watches):
     for wchc in wchc_result_parsed:
         session_watches.update(wchc)
     
+    raise NotImplementedError()
     
 def check_watch_session_consistency(zk_client, watch_paths, exclude=None, include=None):
     """
@@ -355,7 +403,6 @@ def check_zookeeper_connectivity(zk_client, min_timeout=2):
     kazoo_client_cache_enable(True)
     return errors
     
-# TODO all the async functions can be placed in a class, which will make them easier to manage.
 def get_async_ready(asyncs):
     """
     Given a dictionary containing async objects wait for them all to become ready before returning.
@@ -448,7 +495,7 @@ def get_async_result_tuples(results):
             },
         }
 
-    Return a list, composed of tuples of (arg, host, result)
+    Return a list, composed of tuples of (host, arg, result)
     where arg is the input argument, host is the host index and
     result is the response/result object from the zookeeper api call
 
@@ -463,12 +510,16 @@ def get_async_result_tuples(results):
     items = []
 
     for arg, host_result in six.viewitems(results):
-        items.extend([(arg, host, result) for host, result in six.viewitems(host_result) if not isinstance(result, Exception)])
+        items.extend([(host, arg, result) for host, result in six.viewitems(host_result) if not isinstance(result, Exception)])
 
     return items
 
-def get_async_result_set(result):
+def get_async_input_result_set(result):
     """
+    Given an async result dictionary... gets input and result tuples as a set.
+    Use this function when you want a flat set of results and don't care about 
+    inspecting the result per-host. You just want a unique set of responses.
+
     Given a dictionary like::
 
         {
@@ -489,20 +540,56 @@ def get_async_result_set(result):
     Any results that contain exception objects / errors are ignored.
 
     :param result: A result set dictionary as returned from ``get_async_call_per_host``
-    :returns: ``set``
+    :returns: a ``set`` of tuples (arg, result), automatically excludes Exceptions/Errors from results.
     """
     if not isinstance(result, dict):
         raise ValueError('"result" must be dict, got: %s' % type(dict))
     
-    result_items = get_async_result_list(result)
-    return set(result_items)
+    result_items = get_async_result_tuples(result)
+    return {(arg, response) for host, arg, response in result_items}
             
+def get_async_result_set(result):
+    """
+    Similar to ``get_async_input_result_set()``, but only returns the result object.
+
+    Use this function when you only care about the unique result values, and dont need to 
+    know about their inputs, or errors/exceptions.
+
+    :param result: dictionary, async input result
+    :returns: a set of results. 
+    """
+    result_tuple_set = get_async_input_result_set(result)
+    return {response for arg, response in result_tuple_set}
+
+def filter_chroot(chroot, paths):
+    """
+    Takes a sequence of paths, and returns only those that match a given chroot. 
+    Removes the chroot from the prefix of the path.
+    Filter for, and remove chroots from a set of given paths. 
+
+    :param chroot: Your zk connections chroot
+    """
+    if not chroot:
+        return paths
+
+    chroot = '/' + chroot
+    filtered = []
+    for path in paths:
+        if path.startswith(chroot):
+            filtered.append('/' + path.lstrip(chroot))
+
+    return filtered
     
 def get_ephemeral_paths_children_per_host(zk_client):
     """
-    
     Returns a dictionary mapping znode_directory to a list of lists containing children for each node
     queried.
+
+    Note that if your zk_client is configured with a chroot, ONLY ephemerals matching that chroot will be returned.
+
+    This function works by querying all zookeeper servers for their 'dump' output.  This output is combined, and a unique
+    set of directories are determined from the output of each servers dump.
+    From here the children of each directory are queried.
     
     returns a dictionary like::
     
@@ -519,6 +606,7 @@ def get_ephemeral_paths_children_per_host(zk_client):
             },
         }
     """
+    chroot = zk_client.chroot
     # get 1 KazooClient per Zookeeper host.
     clients = kazoo_clients_from_client(zk_client)
     # ensure all the clients are connected
@@ -536,11 +624,15 @@ def get_ephemeral_paths_children_per_host(zk_client):
         ephemeral_znodes.extend([znodes for session, znodes in six.viewitems(parse_admin_dump(host_result)['ephemerals'])])
     # flatten the list of lists
     ephemeral_znodes = sorted(set(itertools.chain.from_iterable(ephemeral_znodes)))
-    log.debug("ephemeral paths resolved: %d, ...\n%s" % (len(ephemeral_znodes), pformat(ephemeral_znodes)))
+    # filter the znodes paths for paths that contain only our chroot.  If there are many applications using this ZK cluster
+    # only apply our checks to paths that are associated with the current connection string / chroot.
+    ephemeral_matching = filter_chroot(chroot, ephemeral_znodes)
+    log.debug("ephemeral paths resolved from 'dump': %d, ...\n%s" % (len(ephemeral_znodes), pformat(ephemeral_znodes)))
+    log.debug("ephemeral paths matching chroot: %d, ...\n%s" % (len(ephemeral_matching), pformat(ephemeral_matching)))
     # We assume that all the znodes that are ephemeral from the 'dump' command are files.
     # We then calculate a set of all directories to examine children in.
     ephemeral_directories = []
-    for znode in ephemeral_znodes:
+    for znode in ephemeral_matching:
         if not znode or znode.strip() == ZNODE_PATH_SEPARATOR:
             log.warn('a znode returned from `dump` is unexpectedly empty: "%s", the output of dump is: %s' % (znode, dump_results))
         try:
@@ -550,6 +642,7 @@ def get_ephemeral_paths_children_per_host(zk_client):
             continue
             
     ephemeral_directories = sorted(set(ephemeral_directories))
+    log.debug("ephemeral directories matching chroot: %d, ...\n%s" % (len(ephemeral_directories), pformat(ephemeral_directories)))
     
     def call(client, znode):
         return client.get_children_async(znode)
@@ -596,15 +689,20 @@ def get_async_call_per_host_errors(zk_client, async_result, ignore=None):
                 
     return errors
     
-def get_ephemeral_paths_children_per_host_paths(ephemeral_children):
+def get_async_result_paths_chilren_per_host(children):
     """
-    Get a simple list of unique paths returned by ``get_ephemeral_paths_children_per_host``
+    Combines arguments, with returned lists to get a unique sequence of 
+    full qualified Zookeeper paths, for all the children of the directories
+    queried.
+
+    Returns a simple sorted list of unique paths returned by ``get_async_call_per_host``
+    when the call performed is ``get_children()``
     
-    :param ephemeral_children: A sequence of absolute paths.
+    :param children: A structure as returned from ``get_async_call_per_host()``
     """
     paths = set()
 
-    for parent_path, host_children in six.viewitems(ephemeral_children):
+    for parent_path, host_children in six.viewitems(children):
         for client_idx, child_paths in six.viewitems(host_children):
             if isinstance(child_paths, Exception):
                 continue
@@ -630,7 +728,7 @@ def check_ephemeral_znode_consistency(zk_client):
     
     children_results = get_ephemeral_paths_children_per_host(zk_client)
     errors = get_async_call_per_host_errors(zk_client, children_results)
-    child_paths = get_ephemeral_paths_children_per_host_paths(children_results)
+    child_paths = get_async_result_paths_chilren_per_host(children_results)
     
     # Check the children are consistent across hosts for each node queried.
     log.debug('checking %d paths that contain ephemerals for consistent children' % len(set(children_results.keys())))
@@ -718,10 +816,10 @@ def check_ephemeral_sessions_fast(zk_client):
     # Connect to each Zookeeper Host
     clients = kazoo_clients_from_client(zk_client)
     kazoo_clients_connect(clients)
-    
+
     children_results = get_ephemeral_paths_children_per_host(zk_client)
     errors = get_async_call_per_host_errors(zk_client, children_results)
-    child_paths = get_ephemeral_paths_children_per_host_paths(children_results)
+    child_paths = get_async_result_paths_chilren_per_host(children_results)
     
     
     # Get connection/session information
@@ -772,10 +870,10 @@ def check_ephemeral_sessions_fast(zk_client):
         
     return errors
     
-LIVE_NODES_PATH = '/live_nodes'
+
 def get_solr_session_ids(zk_client):
     """
-    Find client sessions across servers that are solr servers
+    Find zookeeper-client sessions across ensemble nodes that are solr servers
     """
     # query live-nodes, to get sessions that belong to Solr hosts.
     def call(client, znode):
@@ -811,6 +909,13 @@ def get_solr_session_ids(zk_client):
         log.warn(errors)
     
     return live_node_sessions
+
+def get_solrj_session_ids(zk_client):
+    """
+    Find zookeeper-client sessions across ensemble nodes that are solrj clients. 
+
+    Clients are identified based on their watches.
+    """
 
 def get_zookeeper_collections(zk_client):
     """
@@ -860,38 +965,62 @@ def check_solr_live_nodes(zk_client):
     if not children_results:
         errors.append('No live nodes exist on the %d zookeeper hosts checked' % len(zk_client.hosts))
         
-    
+    raise NotImplementedError()
     
 def check_solr_administration(zk_client):
     """
     Ensure the solr administrative page is reachable / responsive.
     """
-    
+    raise NotImplementedError()
+
 def check_solr_query_handler(zk_client):
     """
     Ensure the solr query handlers are responsive
     """
+    raise NotImplementedError()
     
 def check_solr_cluster_status(zk_client):
     """
     Ensure the solr cluster status reports no downed replicas, etc.
     """
+    raise NotImplementedError()
+    
+
+
+def check_zxid_consistency(zk_client):
+    """
+    """
+    raise NotImplementedError()
+
+def check_myid_sequentiality(zk_client):
+    """
+    """
+    raise NotImplementedError()
+
+def check_mode_output(zk_client):
+    """
+    """
+    raise NotImplementedError()
     
 def check_collection_state(zk_client):
     """
     Check to ensure all state.json files are present, and contain no down states.
     """
-    
-    
+    raise NotImplementedError()
+
 def check_collections_state_consistency(zk_client):
     """
     Check that collections, shards, replicas, and core states are consistent between solr and zookeeper
     Check the core API to ensure the core is healthy in addition to the Replica.
     """
+    raise NotImplementedError()
 
-def get_znode_children_age(zk_client, znodes, coalesce=max):
+
+
+def get_znode_paths_age(zk_client, znodes, coalesce=max):
     """
-    Get the age 
+    Given a sequence of znode paths return a map of all znode paths in the directory and the objects
+    modified or creation date.
 
     :param zk_client: A KazooClient object
     :param znodes: a sequences of paths to get stats for.  The stats will be gathered
@@ -901,6 +1030,7 @@ def get_znode_children_age(zk_client, znodes, coalesce=max):
                      If you provide ``None`` for coalesce, individual results from each
                      Zookeeper host will be returned.
     """
+    raise NotImplementedError()
     
 def get_znode_children_counts(zk_client, znodes, coalesce=max):
     """
@@ -930,7 +1060,7 @@ def get_znode_children_counts(zk_client, znodes, coalesce=max):
     results = get_async_result_tuples(znode_results)
 
     paths_stats = defaultdict(list)
-    for path, host, response in results:
+    for host, path, response in results:
         contents, stats = response
         paths_stats[path].append(getattr(stats, 'numChildren', 0))
 
@@ -942,39 +1072,38 @@ def get_znode_children_counts(zk_client, znodes, coalesce=max):
 
     return stats
 
-def get_znode_contents_age(zk_client, directories):
-    """
-    Given a list of directories return a map of all znode paths in the directory and the objects
-    modified or creation date.
-    """
-    zk.set("/my/favorite", b"some data")
 
 def get_zookeeper_time(zk_client):
     """
-    Get the current time on the Zookeeper servers 
+    Get the current time on the Zookeeper servers.
+    Returns a list of responses for each zk host defined in zk_client.
     """
-
+    # zk.set("/temp/timetest", b"some data")
+    # zk.get()
 
 def check_server_time_consistency(zk_client):
     """
     Check the drift between local time on Zookeeper ensemble members. 
     If the time is off, bad things will happen.
     """
+    times = get_zookeeper_time(zk_client)
+    raise NotImplementedError()
 
-ZK_QUEUE_PATHS = [
-    '/overseer/collection-map-completed',
-    '/overseer/collection-map-failure',
-    '/overseer/collection-map-running',
-    '/overseer/collection-queue-work',
-    'queue',
-    'queue-work'
-]
 
-def check_queue_age(zk_client):
+
+def check_queue_age(zk_client, threshold=datetime.timedelta(minutes=5)):
     """
     Check to ensure timestamps of items in QUEUE paths are not too old.
+
+    :param zk_client: KazooClient
+    :param threshold: a datetime.timedelta() object controlling the maximum age of a file.
     """
-    # TODO
+    # TODO find a way to get a consistent NOW from the server. 
+    #     create a file and delete it? 
+    # get all the child paths of the queue directories
+    # for combine the child paths and query for 
+    raise NotImplementedError()
+
 
 def check_queue_sizes(zk_client, threshold=5):
     """
@@ -986,12 +1115,134 @@ def check_queue_sizes(zk_client, threshold=5):
 
     errors = []
     stats = get_znode_children_counts(zk_client, ZK_QUEUE_PATHS)
+    missing = set(stats.keys()) ^ set(ZK_QUEUE_PATHS)
+    for path in missing:
+        errors.append("queue path [%s] is missing" % path)
+
     if stats is None:
         raise ValueError("stats is None!!!")
     for path, max_children in six.viewitems(stats):
         if max_children > threshold:
             errors.append(
-                "queue [%s] is backed up with: %d children" % (path, max_children)
+                "queue [%s] is backed up with: %d children, error threshold: %d" % (path, max_children, threshold)
             )
+
+    return errors
+
+
+def check_overseer_election(zk_client):
+    """
+    Overseer election contains znodes to help with the election of the overseer within Zookeeper.
+
+    This check works by comparing Solr connected clients, and their session id to the 
+    overseer elect entries.  There should be exactly 1 entry per zookeeper host. 
+    The name of the overseer elect entries and their contents are also verified.
+
+    /overseer_elect/leader is a file with the contents like::
+
+        {"id":"98720987344797722-10.51.65.147:8983_solr-n_0000000000"}
+
+    /overseer_elect/election contains entries like::
+
+        242836175563980834-10.51.64.64:8983_solr-n_0000000001
+        98720987344797722-10.51.65.147:8983_solr-n_0000000000
+    """
+    errors = []
+
+    # TODO its a common pattern to get all the children of a directory using get_children() and then retrieve the 
+    # node data and stats for each child, so maybe move this to a utility method
+    # its also common to compare the per-host result for differences, that can be abstracted as well.
+    def call(client, znode):
+        return client.get_children_async(znode)
+    
+    children_results = get_async_call_per_host(zk_client, [LIVE_NODES_PATH, OVERSEER_ELECT_ELECTION_PATH], call)
+
+    child_paths = get_async_result_paths_chilren_per_host(children_results)
+    # we also need to get the contents of the leader file.
+    child_paths.append(OVERSEER_ELECT_LEADER_PATH)
+       
+
+    def call(client, znode):
+        return client.get_async(znode)
+        
+    node_result = get_async_call_per_host(zk_client, child_paths, call)
+    # get tuples of (path, result)
+    # result is a tuple of (contents, stats)
+    node_data = get_async_input_result_set(node_result)
+    live_nodes = {znode_path_split(path)[1]:result for path, result in node_data if path.startswith(LIVE_NODES_PATH)}
+    election_nodes = {znode_path_split(path)[1]:result for path, result in node_data if path.startswith(OVERSEER_ELECT_ELECTION_PATH)}
+    overseer_leader = [result for path, result in node_data if path == OVERSEER_ELECT_LEADER_PATH]
+    overseer_data_unique = {result[0] for result in overseer_leader}
+    live_node_sessions = {getattr(lnode[1], 'ephemeralOwner', None) for lnode in live_nodes.values()}
+
+    # Test that overseer leader is logical.
+    if not overseer_leader:
+        errors.append("no overseer leader path exists at: %s" % OVERSEER_ELECT_ELECTION_PATH)
+    elif len(overseer_data_unique) > 1:
+        errors.append("overseer leader [%s] contents vary: [%s]" % OVERSEER_ELECT_ELECTION_PATH, ', '.join(overseer_data_unique))
+    else:
+        overseer_contents, overseer_stats = overseer_leader[0]
+        overseer_data = {}
+        try:
+            overseer_data = json.loads(overseer_contents)
+        except ValueError as e:
+            errors.append("overseer leader %s contains invalid json [%s] - %s" % (OVERSEER_ELECT_LEADER_PATH, overseer_contents, e))
+
+        if 'id' not in overseer_data:
+            errors.append("overseer leader %s contains invalid json [%s] - missing 'id' field" % (OVERSEER_ELECT_LEADER_PATH, overseer_contents))
+        else:
+            overseer_id = overseer_data['id'].strip()
+            if overseer_id not in election_nodes:
+                errors.append("overseer leader %s election node %s not present in overseers: [%s]" % (OVERSEER_ELECT_LEADER_PATH, overseer_id, ', '.join(election_nodes.keys())))
+            else:
+                leader_owner = getattr(overseer_stats, 'ephemeralOwner', None)
+                election_node_owner = getattr(election_nodes[overseer_id][1], 'ephemeralOwner', None)
+                if leader_owner != election_node_owner:
+                    errors.append(
+                        "overseer leader %s session: [%s] does not match corresponding election node [%s] session: [%s]" 
+                            % (OVERSEER_ELECT_LEADER_PATH, leader_owner, election_node_owner))
+        
+    # Test that overseer election members are logical
+    if len(live_nodes) != len(election_nodes):
+        errors.append("election members, and live nodes, are different: LIVE:[%s]   ELECTION:[%s]" % (', '.join(live_nodes.keys()),', '.join(election_nodes.keys())))
+
+    election_node_sessions = set()
+    election_node_hosts = set()
+    election_node_debug = [] # maps node name to session for debug.
+    for nodename, data in six.viewitems(election_nodes):
+        session, solrnode, queueid = nodename.split('-')
+        session = int(session)
+        election_node_sessions.add(session)
+        election_node_hosts.add(solrnode)
+
+        election_node_debug.append('%s=>%d' % (nodename, session))
+        
+
+        node_stats = data[1]
+        owner_session = getattr(node_stats, 'ephemeralOwner', None)
+
+        if solrnode not in live_nodes:
+            errors.append("election member [%s] references a solr-host [%s] not associated with any valid live_node," % (nodename, solrnode))
+
+        if owner_session is None:
+            errors.append("election member [%s] is not ephemeral, this node is invalid" % nodename)
+        else:
+            if session not in live_node_sessions:
+                errors.append("election member [%s] references a session [%s] not associated with any valid live_node" % (nodename, session))
+
+            if owner_session != session:
+                errors.append("election member [%s] node-name session is not the same as owning session: %s != %s" % (nodename, session, owner_session))
+
+    # Check that live-nodes are accounted for in election members.
+    for livenode, data in six.viewitems(live_nodes):
+
+        node_stats = data[1]
+        owner_session = getattr(node_stats, 'ephemeralOwner', None)
+
+        if livenode not in election_node_hosts:
+            errors.append("live_node %s does not exist in within any election member: %s" % (livenode, ', '.join(election_node_hosts)))
+
+        if owner_session not in election_node_sessions:
+            errors.append("live_node %s session owner: [%s] is not referenced within any election member: [%s]" % (livenode, owner_session, ', '.join(election_node_debug)))
 
     return errors

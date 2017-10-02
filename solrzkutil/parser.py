@@ -21,6 +21,9 @@ def int_or_none(text):
     return num
 
 def hex_or_none(text):
+    """
+    Get an integer from a hex number or return None
+    """
     if text is None:
         return
 
@@ -67,6 +70,8 @@ def parse_admin_wchc(text):
     Parser zookeeper admin command `wchp`
     
     wchp - watches by session
+
+    Returns a dictionary where the keys are integer session ids, and the value is a list of files.
         
         
       0x15dc0117fd6633a
@@ -150,7 +155,9 @@ def parse_admin_wchp(text):
     """
     Parser zookeeper admin command `wchp`
     
-    wchp - watches by node name.
+    wchp - watches by path name.
+
+    Returns a dictionary where the keys are znode paths, and the value is a list of integer session ids
     
     Example::
     

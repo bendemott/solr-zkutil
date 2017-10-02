@@ -11,7 +11,10 @@ from textwrap import dedent
 import json
 from random import choice
 import webbrowser
+import itertools
 import logging
+import threading
+from threading import Thread
 from os.path import expanduser, expandvars, dirname, exists, join
 log = logging.getLogger()
 logging.basicConfig()
@@ -30,6 +33,19 @@ from colorama import Fore, Back, Style
 from solrzkutil.util import netcat, text_type, parse_zk_hosts, get_leader, get_server_by_id
 from solrzkutil.parser import parse_admin_dump, parse_admin_cons
 
+from solrzkutil.healthy import (check_zookeeper_connectivity,
+                check_ephemeral_sessions_fast,
+                check_ephemeral_znode_consistency,
+                check_ephemeral_dump_consistency,
+                check_watch_sessions_clients,
+                check_watch_sessions_duplicate,
+                check_queue_sizes,
+                check_watch_sessions_valid,
+                check_overseer_election,
+                get_solr_session_ids,
+                multi_admin_command)
+
+
 __application__ = 'solr-zkutil'
 
 COMMANDS = {
@@ -45,6 +61,7 @@ COMMANDS = {
     'admin': ('admin', 'Execute a ZooKeeper administrative command'),
     'ls': ('ls', 'List a ZooKeeper Node'),
     'sessions': ('session-reset', 'Reset ZooKeeper sessions, each client will receive a SESSION EXPIRED notification, and will automatically reconnect.  Solr ephemeral nodes should re-register themselves.'),
+    'health': ('health', 'Test/Check the health of Zookeeper and Solr, any errors or problems will be printed to the console.')
 }
 
 CONFIG_DIRNAME = __application__
@@ -587,11 +604,20 @@ def sessions_reset(zookeepers, server_id=None, ephemeral=False, solr=False):
     """
     Reset connections/sessions to Zookeeper.
     """
+    # TODO support --clients / --solrj option ?
+
     if server_id:
         zk_host = parse_zk_hosts(zookeepers, server_id=server_id)[0]
     else:
         zk_host = parse_zk_hosts(zookeepers, leader=True)[0]
    
+    def get_all_sessions(zk_client):
+        # Get connection/session information
+        conn_results = multi_admin_command(zk_client, b'cons')
+        conn_data = map(parse_admin_cons, conn_results)
+        conn_data = list(itertools.chain.from_iterable(conn_data))
+        # Get a dict of all valid zookeeper sessions as integers
+        return {con['sid']: con['client'][0]  for con in conn_data if con.get('sid')}
     
     search = []
     if ephemeral:
@@ -607,69 +633,114 @@ def sessions_reset(zookeepers, server_id=None, ephemeral=False, solr=False):
     else:
         search += ['on all ensemble members']
 
-    print(style_header('Resetting %s' % search))
-    '''
-    zk = KazooClient(hosts=zk_host, read_only=True, client_id=session_id)
-    try:
-        zk.start()
-    except KazooTimeoutError as e:
-        print('ZK Timeout host: [%s], %s' % (host, e))
-    '''
-    
+    print(style_header('RESETTING %s' % ' '.join(search)))
+
     hostaddr, port = zk_host.split(':')
     dump = netcat(hostaddr, port, b'dump')
-    cons = netcat(hostaddr, port, b'cons')
-    
-    conn_data = parse_admin_cons(cons)
     dump_data = parse_admin_dump(dump)
-    
-    from pprint import pprint 
-    
-    #pprint(conn_data)
-    #pprint(dump_data)
-    
+
+  
+    all_sessions = get_all_sessions(KazooClient(zookeepers))
+    sessions_before = set(all_sessions.keys())
+
     sessions = []
     if server_id is not None:
-        sessions = [s['sid'] for s in conn_data]
+        sessions = sorted(all_sessions.keys())
     else:
-        sessions = [s['session'] for s in dump_data['sessions']]
+        sessions = sorted(all_sessions.keys())
         
     if ephemeral:
         sessions = [s for s in sessions if s in dump_data['ephemerals']]
+
+    if solr:
+        sessions = healthy.get_solr_session_ids(KazooClient(zookeepers))
         
     if not sessions:
         print(style_text("No sessions matching criteria", STATS_STYLE, lpad=2))
-        
-    for session_id in sessions:
-        # sometimes sessions are listed, that are gone, or invalid or disconnected....
-        # when this happens their session id will be zero, or (null)
-        if not session_id:
-            continue
-        s_style = style_text("%s" % str(session_id), STATS_STYLE)
-        print(style_text("Resetting session: %s" % s_style, INFO_STYLE, lpad=2))
-        
+        return
+
+    ##################################
+    ### THREADING IMPLEMENTATION #####
     
+    SESSION_TIMEOUT = 30
+    print(style_text("Sessions will now be reset. This will take %d secs\n" % SESSION_TIMEOUT, TITLE_STYLE, lpad=2))
+    tlock = threading.Lock()
+    def break_session(zookeepers, session):
+        with tlock:
+            s_style = style_text("%s" % str(session_id), STATS_STYLE)
+            print(style_text("Resetting session: %s(%s)" % (s_style, all_sessions[session_id]), INFO_STYLE, lpad=2))
+
         zk = None
         try:
-            zk = KazooClient(hosts=zk_host, read_only=True, client_id=(session_id, b''))
-            zk.start()
-            # TODO - do we need to pause here to ensure we reset sessions.
+            zk = KazooClient(hosts=zk_host, client_id=(session_id, b''), max_retries=3, retry_delay=0.5)
+            zk.start(SESSION_TIMEOUT)
+            zk.get('/live_nodes')
+            time.sleep(SESSION_TIMEOUT)
         except KazooTimeoutError as e:
-            print('ZK Timeout host: [%s], %s' % (zk_host, e))
+            with tlock:
+                print('ZK Timeout host: [%s], %s' % (zk_host, e))
         except Exception as e:
-            print(style_text("Error Resetting session: %s" % e, ERROR_STYLE, lpad=2))
-            continue
+            with tlock:
+                print(style_text("Error Resetting session: %s" % e, ERROR_STYLE, lpad=2))
         finally:
             if zk:
                 zk.stop()
+                with tlock:
+                    print(style_text("Disconnect session: %s" % s_style, INFO_STYLE, lpad=2))
+
+    wait = []
+    for session_id in sessions:
+        t = Thread(target=break_session, args=(zookeepers, session_id))
+        t.start()
+        wait.append(t)
         
-    # TODO support --solr option.
-    # TODO support --clients option ?
+    # wait for all threads to finish
+    for wait_thread in wait:
+        wait_thread.join()
+
+    #########################################
+
+    # wait some time for sessions to come back.
+    time.sleep(5)
+
+    sessions_after = get_all_sessions(KazooClient(zookeepers))
+    sessions_kept = sessions_before & set(sessions_after.keys())
+        
+    print(style_text("\nSESSIONS BEFORE RESET (%d)" % len(sessions_before), TITLE_STYLE, lpad=2))
+    for sid in sorted(sessions_before):
+        if sid in sessions_kept:
+            print(style_text(str(sid), INFO_STYLE, lpad=4))
+        else:
+            print(style_text(str(sid), STATS_STYLE, lpad=4))
     
-    # solr can be identified by its watch on a collection.
-        
-    print('')
-        
+    print(style_text("\nSESSIONS AFTER RESET (%d)" % len(sessions_after), TITLE_STYLE, lpad=2))
+    for sid in sorted(sessions_after):
+        if sid in sessions_kept:
+            print(style_text(str(sid), INFO_STYLE, lpad=4))
+        else:
+            print(style_text(str(sid)+'(new)', STATS_STYLE, lpad=4))
+
+def health_check(zookeepers):
+    zk_client = KazooClient(zookeepers)
+    for check in (check_zookeeper_connectivity,
+                check_ephemeral_sessions_fast,
+                check_ephemeral_znode_consistency,
+                check_ephemeral_dump_consistency,
+                check_watch_sessions_clients,
+                check_watch_sessions_duplicate,
+                check_queue_sizes,
+                check_watch_sessions_valid,
+                check_overseer_election):
+
+        print(style_text("RUNNING: %s" % check.__name__, TITLE_STYLE, lpad=2))
+        errors = check(zk_client)
+        if not errors:
+            print(style_text("NO ERRORS in %s" % check.__name__, STATS_STYLE, lpad=6))
+        else:
+            print(style_text("ERRORS from %s" % check.__name__, INFO_STYLE, lpad=6))
+
+        for err in errors:
+            print(style_text(err, ERROR_STYLE, lpad=8))
         
 def cli():
     """
@@ -877,7 +948,13 @@ def cli():
         help='reset sessions with ephemeral nodes only')
     session.add_argument('--solr', action='store_true', required=False,
         help='reset sessions from solr nodes only')
-        
+
+    # -- HEALTH -------------------
+    cmd, about = COMMANDS['health']
+    session = subparsers.add_parser(cmd, help=about)
+    session.add_argument(*zk_argument['args'], **zk_argument['kwargs'])
+    session.add_argument(*env_argument['args'], **env_argument['kwargs'])
+
     return parser
 
 
@@ -932,6 +1009,8 @@ def main(argv=None):
         
     elif cmd == COMMANDS['sessions'][0]:
         sessions_reset(zookeepers=args['zookeepers'], server_id=args['server_id'], ephemeral=args['ephemeral'], solr=args['solr'])
+    elif cmd == COMMANDS['health'][0]:
+        health_check(zookeepers=args['zookeepers'])
     else:
         parser.print_help()
 

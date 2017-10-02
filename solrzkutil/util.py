@@ -4,6 +4,7 @@ import socket
 import time
 import six
 import math
+import threading
 from random import choice 
 import logging
 
@@ -15,6 +16,7 @@ from kazoo.exceptions import OperationTimeoutError
 
 log = logging.getLogger(__name__)
 
+MODE_LEADER = 'leader'
 CONNECTION_CACHE_ENABLED = True
 CONNECTION_CACHE = {}
 def kazoo_client_cache_enable(enable):
@@ -286,21 +288,22 @@ def text_type(string, encoding='utf-8'):
     else:
         return six.text_type(string, encoding)
 
+netcat_lock = threading.Lock()
 def netcat(hostname, port, content, timeout=5):
     """
     Operate similary to netcat command in linux (nc).
+    Thread safe implementation
     """
-    # SOCK_DGRAM = UDP 
-
+    
  
     # send the request
     content = six.binary_type(content)
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((hostname, int(port)))
-        sock.settimeout(timeout)
-        sock.sendall(content)
-        sock.shutdown(socket.SHUT_WR)
+        with netcat_lock:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((hostname, int(port)))
+            sock.settimeout(timeout)
+            sock.sendall(content)
     except socket.timeout as e:
         raise IOError("connect timeout: %s calling [%s] on [%s]" % (e, content, hostname))
     except socket.error as e: # subclass of IOError
@@ -314,17 +317,22 @@ def netcat(hostname, port, content, timeout=5):
         # receive the response
         try:
             # blocks until there is data on the socket
-            msg = sock.recv(1024)
-            response += text_type(msg)
+            with netcat_lock:
+                msg = sock.recv(1024)
+                response += text_type(msg)
         except socket.timeout as e:
             raise IOError("%s calling [%s] on [%s]" % (e, content, hostname))
         except socket.error as e:
             raise IOError("%s calling [%s] on [%s]" % (e, content, hostname))
  
         if len(msg) == 0:
-            sock.shutdown(socket.SHUT_RDWR)
-            sock.close()
-            break
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+                sock.close()
+            except OSError:
+                pass
+            finally:
+                break
 
     response = text_type(response)
         

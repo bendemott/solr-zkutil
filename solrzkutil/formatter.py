@@ -1,9 +1,14 @@
+"""
+solrzkutil.formatter contains functionality to format various data structures or strings into human
+readable content.
+"""
+
 from __future__ import print_function
 from __future__ import unicode_literals
 
 import six
 
-def fmt_host(host_tuple):
+def format_host(host_tuple):
     """
     Format a host tuple to a string
     """
@@ -16,3 +21,5 @@ def fmt_host(host_tuple):
         return host_tuple
     else:
         raise ValueError('host_tuple unexpected type: (%s) %s' % (type(host_tuple), host_tuple))
+
+six.integer_types
