@@ -265,8 +265,8 @@ def check_watch_sessions_duplicate(zk_client):
     comparisons = {tuple(sorted(pair)) for pair in itertools.product(range(len(zk_hosts)), repeat=2) if pair[0] != pair[1]}
     for idx1, idx2 in comparisons:
         # Set comparison to determine differences between the two hosts
-        differences = set(wchc_result_parsed[idx1].keys()) ^ set(wchc_result_parsed[idx2].keys())
-        if not differences:
+        duplicates = set(wchc_result_parsed[idx1].keys()) & set(wchc_result_parsed[idx2].keys())
+        if not duplicates:
             log.debug('host:{host1} and host:{host2} have {watch1ct} and {watch2ct} watches, and no duplicates.'.format(
                 host1=zk_hosts[idx1],
                 host2=zk_hosts[idx2],
@@ -279,7 +279,7 @@ def check_watch_sessions_duplicate(zk_client):
             'duplicate sessions are present on watches for host:{host1} and host:{host2}... duplicates: {diff}'.format(
                 host1=zk_hosts[idx1],
                 host2=zk_hosts[idx2],
-                diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
+                diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in duplicates])
             )
         )
 
