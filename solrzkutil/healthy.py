@@ -182,8 +182,8 @@ def check_ephemeral_dump_consistency(zk_client):
         if differences:
             errors.append(
                 'ephemeral nodes do not match for host:{host1} and host:{host2}... differences: {diff}'.format(
-                    host1=zk_hosts[idx1],
-                    host2=zk_hosts[idx2],
+                    host1=format_host(zk_hosts[idx1]),
+                    host2=format_host(zk_hosts[idx2]),
                     diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
                 )
             )
@@ -268,8 +268,8 @@ def check_watch_sessions_duplicate(zk_client):
         duplicates = set(wchc_result_parsed[idx1].keys()) & set(wchc_result_parsed[idx2].keys())
         if not duplicates:
             log.debug('host:{host1} and host:{host2} have {watch1ct} and {watch2ct} watches, and no duplicates.'.format(
-                host1=zk_hosts[idx1],
-                host2=zk_hosts[idx2],
+                host1=format_host(zk_hosts[idx1]),
+                host2=format_host(zk_hosts[idx2]),
                 watch1ct=len(wchc_result_parsed[idx1].keys()),
                 watch2ct=len(wchc_result_parsed[idx2].keys())
             ))
@@ -277,8 +277,8 @@ def check_watch_sessions_duplicate(zk_client):
             
         errors.append(
             'duplicate sessions are present on watches for host:{host1} and host:{host2}... duplicates: {diff}'.format(
-                host1=zk_hosts[idx1],
-                host2=zk_hosts[idx2],
+                host1=format_host(zk_hosts[idx1]),
+                host2=format_host(zk_hosts[idx2]),
                 diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in duplicates])
             )
         )
@@ -381,7 +381,7 @@ def check_watch_session_consistency(zk_client, watch_paths, exclude=None, includ
             if differences:
                 errors.append(
                     '{zk_host} sessions watches do not match across files:{file1} and {file2}... differences: {diff}'.format(
-                        zk_host = zk_hosts[host_idx],
+                        zk_host = format_host(zk_hosts[host_idx]),
                         file1=path1,
                         file2=path2,
                         diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
@@ -688,7 +688,7 @@ def get_async_call_per_host_errors(zk_client, async_result, ignore=None):
                 # see if this one is an error.
                 errors.append(
                     "error from host: %s for input: [%s], error: (%s) %s" % (
-                        hosts[client_idx],
+                        format_host(hosts[client_idx]),
                         arg,
                         exception.__class__.__name__,
                         str(exception)
@@ -753,8 +753,8 @@ def check_ephemeral_znode_consistency(zk_client):
             errors.append(
                 'ephemeral path [{parent}] contains inconsistent child nodes for host:{host1} and host:{host2}... differences: {diff}'.format(
                     parent=parent_path,
-                    host1=zk_hosts[idx1],
-                    host2=zk_hosts[idx2],
+                    host1=format_host(zk_hosts[idx1]),
+                    host2=format_host(zk_hosts[idx2]),
                     diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in differences])
                 )
             )
@@ -780,8 +780,8 @@ def check_ephemeral_znode_consistency(zk_client):
             errors.append(
                 'ephemeral path [{path}] contains inconsistent content for host:{host1} and host:{host2}... differences: {diff}'.format(
                     path=path,
-                    host1=zk_hosts[idx1],
-                    host2=zk_hosts[idx2],
+                    host1=format_host(zk_hosts[idx1]),
+                    host2=format_host(zk_hosts[idx2]),
                     diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in sorted(differences)])
                 )
             )
@@ -798,8 +798,8 @@ def check_ephemeral_znode_consistency(zk_client):
             errors.append(
                 'ephemeral path [{path}] contains inconsistent ephemeral owner for host:{host1} and host:{host2}... differences: {diff}'.format(
                     path=path,
-                    host1=zk_hosts[idx1],
-                    host2=zk_hosts[idx2],
+                    host1=format_host(zk_hosts[idx1]),
+                    host2=format_host(zk_hosts[idx2]),
                     diff='\n\t' + '\n\t'.join([six.text_type(entry) for entry in sorted(differences)])
                 )
             )
@@ -851,7 +851,7 @@ def check_ephemeral_sessions_fast(zk_client):
                 # see if this one is an error.
                 errors.append(
                     "error from host: %s, path: %s, error: (%s) %s" % (
-                        zk_client.hosts[host_idx],
+                        format_host(zk_client.hosts[host_idx]),
                         path,
                         exception.__class__.__name__,
                         str(exception)
@@ -866,13 +866,13 @@ def check_ephemeral_sessions_fast(zk_client):
                 if ephemeral_session not in valid_sessions:
                     errors.append(
                         "error from host: %s, ephemeral path: %s, session-id: [%s] does not exist on any Zookeeper server" % (
-                            zk_client.hosts[host_idx], 
+                            format_host(zk_client.hosts[host_idx]), 
                             path,
                             ephemeral_session
                         )
                     )
                 else:
-                    log.debug('host %s path %s has valid session: %d' % (zk_client.hosts[host_idx], path, ephemeral_session))
+                    log.debug('host %s path %s has valid session: %d' % (format_host(zk_client.hosts[host_idx]), path, ephemeral_session))
         
     if not errors:
         log.debug('%s.%s encountered no errors' % (__name__, check_ephemeral_sessions_fast.__name__))
