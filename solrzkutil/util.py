@@ -327,8 +327,9 @@ def netcat(hostname, port, content, timeout=5):
  
         if len(msg) == 0:
             try:
-                sock.shutdown(socket.SHUT_RDWR)
-                sock.close()
+                with netcat_lock:
+                    sock.shutdown(socket.SHUT_RDWR)
+                    sock.close()
             except OSError:
                 pass
             finally:

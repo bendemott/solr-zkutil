@@ -13,8 +13,10 @@ import time
 from pprint import pformat
 import logging
 log = logging.getLogger(__name__)
-
+import sys
 import six
+import traceback
+
 from kazoo.retry import KazooRetry
 from kazoo.client import KazooClient
 
@@ -26,7 +28,6 @@ from solrzkutil.parser import (parse_admin_dump,
                                parse_admin_wchc)
 from solrzkutil.util import (netcat, 
                              parse_zk_hosts,
-
                              kazoo_clients_from_client, 
                              kazoo_clients_connect, 
                              kazoo_client_cache_enable)
@@ -65,6 +66,14 @@ ZK_QUEUE_PATHS = [
 #      for this comparison simply get a set object of all repsonses, if the set contains exactly 1 element there
 #      are no differences.  If the set contains 2 elements, 1 host is inconsistent.
 #      If the set contains 3 o more elements, there is a general consistency issue.
+
+def connect_to_zookeeper(zookeepers):
+    try:
+        c = KazooClient(zookeepers)
+        return c
+    except Exception as e:
+        output = [get_exception_traceback()]
+        log.error(output)
 
 def multi_admin_command(zk_client, command):
     """
@@ -256,7 +265,7 @@ def check_watch_sessions_duplicate(zk_client):
     comparisons = {tuple(sorted(pair)) for pair in itertools.product(range(len(zk_hosts)), repeat=2) if pair[0] != pair[1]}
     for idx1, idx2 in comparisons:
         # Set comparison to determine differences between the two hosts
-        differences = set(wchc_result_parsed[idx1].keys()) & set(wchc_result_parsed[idx2].keys())
+        differences = set(wchc_result_parsed[idx1].keys()) ^ set(wchc_result_parsed[idx2].keys())
         if not differences:
             log.debug('host:{host1} and host:{host2} have {watch1ct} and {watch2ct} watches, and no duplicates.'.format(
                 host1=zk_hosts[idx1],
@@ -1244,5 +1253,53 @@ def check_overseer_election(zk_client):
 
         if owner_session not in election_node_sessions:
             errors.append("live_node %s session owner: [%s] is not referenced within any election member: [%s]" % (livenode, owner_session, ', '.join(election_node_debug)))
+
+    return errors
+
+def get_exception_traceback():
+    ex_type, ex, tb = sys.exc_info()
+    traceback.format_tb(tb,10)
+    exception_info =  " ** (%s) %s - %s " % (ex_type, ex, ";\n".join(traceback.format_tb(tb,10)))
+    del tb
+    return exception_info
+
+def check_ensemble_for_complex_errors(zk_client):
+    """
+    This function does several complex checks: 
+        * Checks zookeeper connectivity.
+        * Checks ephemeral nodes.
+        * Checks watches.
+    """
+    errors = []
+
+    try:
+        errors.extend(check_zookeeper_connectivity(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_ephemeral_sessions_fast(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_ephemeral_znode_consistency(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_ephemeral_dump_consistency(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_watch_sessions_clients(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
+
+    try:
+        errors.extend(check_watch_sessions_duplicate(zk_client))
+    except Exception as e:
+        errors.extend([get_exception_traceback()])
 
     return errors

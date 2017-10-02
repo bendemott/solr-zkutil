@@ -1,5 +1,6 @@
 import string
 import struct
+import six
 from collections import defaultdict
 from dateutil import parser
 
@@ -11,7 +12,7 @@ def int_or_none(text):
     if text is None:
         return
 
-    if isinstance(text, (int, long)):
+    if isinstance(text, six.integer_types):
         return text
     try:
         num = int(text)
@@ -27,7 +28,7 @@ def hex_or_none(text):
     if text is None:
         return
 
-    if isinstance(text, (int, long)):
+    if isinstance(text, six.integer_types):
         return text
 
     try:
@@ -52,7 +53,8 @@ def parse_zxid(text):
         return None
     
     # Parse as a 64 bit hex int
-    zxid = long(text.strip(), 16)
+    zxid = int(text.strip(), 16)
+
     # convert to bytes
     try:
         zxid_bytes = struct.pack('>q', zxid)

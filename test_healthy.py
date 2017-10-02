@@ -21,12 +21,9 @@ from solrzkutil.healthy import (check_ephemeral_sessions_fast,
 logging.basicConfig()
 log = logging.getLogger()
 kazoo_log = logging.getLogger('kazoo.client')
-kazoo_log.setLevel(logging.WARN)
-log.setLevel(logging.INFO)
-
-# TODO fix bug with ROOT not working for DICE
-zookeepers = 'zk01.dev.gigdev.dhiaws.com:2181,zk02.dev.gigdev.dhiaws.com:2181,zk03.dev.gigdev.dhiaws.com:2181'
-#zookeepers = 'zookeeper_0.dicepilot.dhiaws.com,zookeeper_1.dicepilot.dhiaws.com,zookeeper_2.dicepilot.dhiaws.com/solrdicejobs'
+kazoo_log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
+zookeepers='zk01.host.com,zk02.host.com,zk03.host.com'
 c = KazooClient(zookeepers)
 print("ZK HOSTS: ", c.hosts)
 
