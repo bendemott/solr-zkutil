@@ -72,6 +72,7 @@ setup(
         'kazoo',           # ZooKeeper api
         'six',
         'pendulum',
+        'tzlocal'
     ],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
